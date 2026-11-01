@@ -192,10 +192,11 @@ def client(a):
             pass
     shutil.rmtree(os.path.join(inst, "crash-reports"), ignore_errors=True)
     disp = free_display()
-    xvfb = subprocess.Popen(["Xvfb", f":{disp}", "-screen", "0", "1280x720x24", "-nolisten", "tcp"],
+    xargs = os.environ.get("XVFB_ARGS", "-screen 0 1280x720x24 +extension GLX +render -noreset").split()
+    xvfb = subprocess.Popen(["Xvfb", f":{disp}"] + xargs + ["-nolisten", "tcp"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)
-    env = dict(os.environ, DISPLAY=f":{disp}", LIBGL_ALWAYS_SOFTWARE="1", MESA_GL_VERSION_OVERRIDE="4.5",
+    env = dict(os.environ, DISPLAY=f":{disp}", SDL_VIDEODRIVER="x11", SDL_VIDEO_FORCE_EGL="1", SDL_VIDEO_X11_FORCE_EGL="1", XDG_RUNTIME_DIR="/tmp/xdg-runtime", LIBGL_ALWAYS_SOFTWARE="1", MESA_GL_VERSION_OVERRIDE="4.5",
                MESA_GLSL_VERSION_OVERRIDE="450", __GL_SYNC_TO_VBLANK="0", vblank_mode="0")
     jvm = ["-Xmx2200m", "-Djava.awt.headless=true"] + (a.jvm.split() if a.jvm else [])
     cmd = ["portablemc", "--main-dir", MCROOT, "start", spec, "--mc-dir", inst, "-u", "Tester", "--jvm", java_for(a.mc),

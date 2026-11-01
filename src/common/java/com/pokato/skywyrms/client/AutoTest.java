@@ -58,7 +58,16 @@ public final class AutoTest {
          joinedTicks = 0;
          return;
       }
-      if (++joinedTicks < 40) {
+      //#if MC >= 260200
+      boolean screenOpen = minecraft.gui.screen() != null;
+      //#else
+      boolean screenOpen = minecraft.screen != null;
+      //#endif
+      if (screenOpen) {
+         joinedTicks = Math.min(joinedTicks, 20); // "Loading terrain" etc.: keys do nothing while a screen is open
+         return;
+      }
+      if (++joinedTicks < 60) {
          return; // let the world settle
       }
       if (STEPS.isEmpty()) {
