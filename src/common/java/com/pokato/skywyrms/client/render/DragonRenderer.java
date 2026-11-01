@@ -2,8 +2,10 @@ package com.pokato.skywyrms.client.render;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.pokato.skywyrms.Skywyrms;
+import com.pokato.skywyrms.config.ModConfig;
 import com.pokato.skywyrms.entity.DragonEntity;
 import com.pokato.skywyrms.entity.DragonKind;
+import net.minecraft.client.Minecraft;
 //#if MC < 12102
 import net.minecraft.client.renderer.MultiBufferSource;
 //#endif
@@ -52,6 +54,22 @@ public class DragonRenderer extends MobRenderer<DragonEntity, DragonModel> {
          : Skywyrms.id("textures/entity/hybrid/" + body.element() + "_" + blood.element() + suffix);
    }
 
+   /**
+    * 1.2.4 config "riderSeeThrough": the dragon the local player rides is drawn see-through (vanilla's translucent
+    * pass for bodies that are not visible) - only on this client - in first person ("first_person") or always.
+    */
+   public static boolean seeThrough(DragonEntity dragon) {
+      int mode = ModConfig.get().seeThroughMode();
+      if (mode == 0) {
+         return false;
+      }
+      Minecraft minecraft = Minecraft.getInstance();
+      if (minecraft.player == null || minecraft.player.getVehicle() != dragon) {
+         return false;
+      }
+      return mode == 2 || minecraft.options.getCameraType().isFirstPerson();
+   }
+
    //#if MC >= 12102
    public DragonRenderState createRenderState() {
       return new DragonRenderState();
@@ -59,54 +77,67 @@ public class DragonRenderer extends MobRenderer<DragonEntity, DragonModel> {
 
    public void extractRenderState(DragonEntity entity, DragonRenderState state, float partialTick) {
       super.extractRenderState(entity, state, partialTick);
+      state.kind = this.kind;
+      state.blood = entity.blood();
+      state.seeThrough = seeThrough(entity);
+      entity.anim.fill(state.anim, entity, partialTick);
+   }
+
+   protected boolean isBodyVisible(DragonRenderState state) {
+      return !state.seeThrough && super.isBodyVisible(state);
+   }
    //#else
    public void render(DragonEntity entity, float yaw, float partialTick, PoseStack poseStack, MultiBufferSource buffer, int light) {
       DragonRenderState state = ((DragonModel)this.model).state;
-   //#endif
       state.kind = this.kind;
       state.blood = entity.blood();
+      state.seeThrough = seeThrough(entity);
       entity.anim.fill(state.anim, entity, partialTick);
-      //#if MC < 12102
       super.render(entity, yaw, partialTick, poseStack, buffer, light);
-      //#endif
    }
 
-   //#if MC >= 12102 && MC < 12111
-   public ResourceLocation getTextureLocation(DragonRenderState state) {
-   //#elif MC >= 12111
-   public Identifier getTextureLocation(DragonRenderState state) {
+   protected boolean isBodyVisible(DragonEntity entity) {
+      return !seeThrough(entity) && super.isBodyVisible(entity);
+   }
    //#endif
-      //#if MC >= 12102
+
+   //#if MC >= 12111
+   public Identifier getTextureLocation(DragonRenderState state) {
       return this.textures[state.blood.ordinal()];
-      //#else
+   }
+   //#elif MC >= 12102
+   public ResourceLocation getTextureLocation(DragonRenderState state) {
+      return this.textures[state.blood.ordinal()];
+   }
+   //#else
    public ResourceLocation getTextureLocation(DragonEntity entity) {
       return this.textures[entity.blood().ordinal()];
-      //#endif
    }
+   //#endif
 
    //#if MC >= 12102
    protected void scale(DragonRenderState state, PoseStack poseStack) {
       float scale = this.kind.scale() * state.ageScale;
+      poseStack.scale(scale, scale, scale);
+   }
    //#else
    protected void scale(DragonEntity entity, PoseStack poseStack, float partialTick) {
-   //#endif
-      //#if MC >= 12005 && MC < 12102
+      //#if MC >= 12005
       float scale = this.kind.scale() * entity.getAgeScale();
-      //#elif MC < 12005
+      //#else
       float scale = this.kind.scale() * entity.getScale();
       //#endif
       poseStack.scale(scale, scale, scale);
-   //#if MC >= 12102
    }
+   //#endif
 
-   //#endif
-   //#if MC >= 12102 && MC < 260300
-   protected AABB getBoundingBoxForCulling(DragonEntity entity) {
-   //#elif MC >= 260300
+   //#if MC >= 260300
    protected AABB getBoundingBoxForCulling(DragonEntity entity, float partialTick) {
-   //#endif
-      //#if MC >= 12102
       return entity.renderBounds();
-      //#endif
    }
+   //#elif MC >= 12102
+   protected AABB getBoundingBoxForCulling(DragonEntity entity) {
+      return entity.renderBounds();
+   }
+   //#endif
 }

@@ -1,5 +1,7 @@
 package com.pokato.skywyrms.entity;
 
+import com.pokato.skywyrms.config.ModConfig;
+
 import com.pokato.skywyrms.ability.DragonAbilities;
 //#if MC < 12106
 import com.pokato.skywyrms.compat.Nbt;
@@ -271,11 +273,12 @@ public class DragonEntity extends TamableAnimal {
 
    private void applyGeneStats(boolean heal) {
       DragonGenes g = this.genes;
-      setBase(this, Attributes.MAX_HEALTH, g.mix(DragonKind::maxHealth) * g.healthFactor());
-      setBase(this, Attributes.ATTACK_DAMAGE, g.mix(DragonKind::attackDamage) * g.powerFactor());
-      setBase(this, Attributes.ARMOR, g.mix(DragonKind::armor));
-      setBase(this, Attributes.FLYING_SPEED, g.mix(DragonKind::flyingSpeed) * g.speedFactor());
-      setBase(this, Attributes.MOVEMENT_SPEED, g.mix(DragonKind::walkSpeed) * g.speedFactor());
+      ModConfig c = ModConfig.get();
+      setBase(this, Attributes.MAX_HEALTH, g.mix(DragonKind::maxHealth) * g.healthFactor() * c.healthMultiplier);
+      setBase(this, Attributes.ATTACK_DAMAGE, g.mix(DragonKind::attackDamage) * g.powerFactor() * c.attackDamageMultiplier);
+      setBase(this, Attributes.ARMOR, g.mix(DragonKind::armor) * c.armorMultiplier);
+      setBase(this, Attributes.FLYING_SPEED, g.mix(DragonKind::flyingSpeed) * g.speedFactor() * c.flySpeedMultiplier);
+      setBase(this, Attributes.MOVEMENT_SPEED, g.mix(DragonKind::walkSpeed) * g.speedFactor() * c.walkSpeedMultiplier);
       if (heal) {
          this.setHealth(this.getMaxHealth());
       } else if (this.getHealth() > this.getMaxHealth()) {
@@ -307,8 +310,13 @@ public class DragonEntity extends TamableAnimal {
    }
 
    public float abilityPower() {
-      float power = this.genes().powerFactor();
+      float power = this.genes().powerFactor() * ModConfig.get().abilityDamageMultiplier;
       return this.isPurebred() ? power * 1.15F : power;
+   }
+
+   /** false when this dragon's ability is switched off in the config */
+   public boolean abilityAllowed() {
+      return ModConfig.get().abilityEnabled(this.kind.ability().id());
    }
 
    protected Component getTypeName() {
@@ -379,7 +387,26 @@ public class DragonEntity extends TamableAnimal {
    }
 
    public static boolean isLoveFood(ItemStack stack) {
+      ModConfig c = ModConfig.get();
+      if (!c.breedItems.isEmpty()) {
+         return configMatch(c.breedItems, stack);
+      }
       return stack.is(Items.GOLDEN_APPLE) || stack.is(Items.ENCHANTED_GOLDEN_APPLE);
+   }
+
+   /** item id or one of its tags listed in a config item list */
+   private static boolean configMatch(java.util.List<String> list, ItemStack stack) {
+      if (stack.isEmpty()) {
+         return false;
+      }
+      String id = String.valueOf(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()));
+      return ModConfig.matches(list, id, stack.getItem().builtInRegistryHolder().tags().map(tag -> String.valueOf(tag.location())));
+   }
+
+   /** items that tame a wild adult dragon */
+   public boolean isTameItem(ItemStack stack) {
+      ModConfig c = ModConfig.get();
+      return !c.tameItems.isEmpty() ? configMatch(c.tameItems, stack) : this.isDefaultFood(stack);
    }
 
    public boolean canMate(Animal other) {
@@ -597,6 +624,12 @@ public class DragonEntity extends TamableAnimal {
    }
 
    public boolean isFood(ItemStack stack) {
+      ModConfig c = ModConfig.get();
+      return !c.foodItems.isEmpty() ? configMatch(c.foodItems, stack) : this.isDefaultFood(stack);
+   }
+
+   /** meat (and fish for the Tide Wyrm): the built-in food, taming and healing item */
+   private boolean isDefaultFood(ItemStack stack) {
       //#if MC >= 12005
       return stack.is(ItemTags.MEAT) || this.kind == DragonKind.TIDE && stack.is(ItemTags.FISHES);
       //#else
@@ -682,8 +715,8 @@ public class DragonEntity extends TamableAnimal {
                   this.getZ(),
                   ModSounds.get("dragon.flap"),
                   this.getSoundSource(),
-                  1.3F * size,
-                  this.flapPitch() / Mth.sqrt(size) * (0.92F + this.random.nextFloat() * 0.16F),
+                  1.3F * size * ModConfig.get().wingSoundVolume,
+                  this.flapPitch() * ModConfig.get().wingSoundPitch / Mth.sqrt(size) * (0.92F + this.random.nextFloat() * 0.16F),
                   false
                );
          }
@@ -820,7 +853,9 @@ public class DragonEntity extends TamableAnimal {
    }
 
    public boolean startBreath() {
-      if (this.isBreathing()) {
+      if (!this.abilityAllowed()) {
+         return false;
+      } else if (this.isBreathing()) {
          return true;
       } else if (!(this.energy < 15.0F) && !this.isInSittingPose()) {
          this.breathTicks = 0;
@@ -849,7 +884,9 @@ public class DragonEntity extends TamableAnimal {
    }
 
    public boolean castAbility() {
-      if (this.abilityCooldown <= 0 && this.level() instanceof ServerLevel level) {
+      if (!this.abilityAllowed()) {
+         return false;
+      } else if (this.abilityCooldown <= 0 && this.level() instanceof ServerLevel level) {
          int var3 = DragonAbilities.cost(this.kind.ability());
          if (this.energy < var3) {
             return false;
@@ -1197,7 +1234,7 @@ public class DragonEntity extends TamableAnimal {
 
          return InteractionResult.SUCCESS;
       } else if (!this.isTame()) {
-         if (this.isFood(stack) && !this.isBaby()) {
+         if (this.isTameItem(stack) && !this.isBaby()) {
             if (!client) {
                if (this.getTarget() == player) {
                   this.level().broadcastEntityEvent(this, (byte)6);
@@ -1218,7 +1255,7 @@ public class DragonEntity extends TamableAnimal {
                //#if MC < 12102
                this.playSound(SoundEvents.GENERIC_EAT, 1.0F, this.basePitch());
                //#endif
-               if (this.random.nextInt(3) == 0) {
+               if (this.random.nextFloat() < ModConfig.get().tameChance) {
                   this.tame(player);
                   this.getNavigation().stop();
                   this.setTarget(null);
@@ -1629,7 +1666,7 @@ public class DragonEntity extends TamableAnimal {
             if (idle == 3 || idle == 5) {
                this.level()
                   .playLocalSound(
-                     this.getX(), this.getY(), this.getZ(), ModSounds.get("dragon.flap"), this.getSoundSource(), 0.5F * size, this.flapPitch() * 1.1F, false
+                     this.getX(), this.getY(), this.getZ(), ModSounds.get("dragon.flap"), this.getSoundSource(), 0.5F * size * ModConfig.get().wingSoundVolume, this.flapPitch() * 1.1F * ModConfig.get().wingSoundPitch, false
                   );
             } else if (idle == 4) {
                this.level()

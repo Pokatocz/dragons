@@ -63,6 +63,9 @@ public class DragonGlowLayer extends EyesLayer<DragonRenderState, DragonModel> {
       float netHeadYaw,
       float headPitch
    ) {
+      if (DragonRenderer.seeThrough(entity)) {
+         return;
+      }
       this.current = entity.blood();
       super.render(poseStack, buffer, light, entity, limbSwing, limbSwingAmount, partialTick, ageInTicks, netHeadYaw, headPitch);
    //#elif MC >= 12109
@@ -71,6 +74,9 @@ public class DragonGlowLayer extends EyesLayer<DragonRenderState, DragonModel> {
    public void render(PoseStack poseStack, MultiBufferSource buffer, int light, DragonRenderState state, float yRot, float xRot) {
    //#endif
       //#if MC >= 12102
+      if (state.seeThrough) {
+         return;
+      }
       this.current = state.blood;
       //#endif
       //#if MC >= 12109

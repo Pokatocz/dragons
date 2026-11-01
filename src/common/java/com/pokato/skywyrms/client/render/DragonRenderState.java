@@ -14,4 +14,6 @@ public class DragonRenderState {
    public DragonKind kind = DragonKind.EMBER;
    public DragonKind blood = DragonKind.EMBER;
    public final AnimState anim = new AnimState();
+   /** 1.2.4: the local player's mount drawn see-through (no glow layer either) */
+   public boolean seeThrough;
 }

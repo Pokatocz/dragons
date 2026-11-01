@@ -255,6 +255,9 @@ public final class DragonAbilities {
 
    public static void infuse(DragonEntity dragon, ServerLevel level, LivingEntity target) {
       DragonKind blood = dragon.blood();
+      if (!com.pokato.skywyrms.config.ModConfig.get().abilityEnabled(blood.ability().id())) {
+         return; // 1.2.4: that element's ability is switched off, so its blood effect is too
+      }
       if (blood != dragon.getKind() && target.isAlive()) {
          float power = dragon.abilityPower();
          switch (blood) {
