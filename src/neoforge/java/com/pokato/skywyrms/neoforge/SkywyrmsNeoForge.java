@@ -116,7 +116,7 @@ public class SkywyrmsNeoForge {
             AbilityPayload.ID,
             AbilityPayload::read,
             handler -> handler.server(
-               (IPlayPayloadHandler)(payload, context) -> context.workHandler()
+               (IPlayPayloadHandler<AbilityPayload>)(payload, context) -> context.workHandler()
                   .execute(() -> context.player().ifPresent(player -> ServerHooks.onAbility((ServerPlayer)player, payload)))
             )
          );

@@ -10,3 +10,6 @@ dist/test-jars/
 dist/jars/
 __pycache__/
 *.pyc
+test/mods/
+test/results/
+test/*.log

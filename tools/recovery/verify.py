@@ -4,7 +4,7 @@ verify.py <rebuilt jar> <target>   -> prints differing files and a diff line cou
 """
 import os, subprocess, sys, difflib, tempfile, shutil
 
-R = "/opt/recovery"
+R = "/opt/recovery"  # decompiled reference + mappings
 jar, t = sys.argv[1], sys.argv[2]
 loader, ver = t.split("-", 1)
 tmp = tempfile.mkdtemp()
