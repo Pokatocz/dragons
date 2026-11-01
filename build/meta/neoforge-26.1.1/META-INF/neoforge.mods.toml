@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+
+[[mods]]
+modId="skywyrms"
+version="1.2.3"
+displayName="Skywyrms"
+authors="pokato"
+logoFile="skywyrms.png"
+description='''Six rideable, flyable elemental dragons. Tame them, saddle them, take to the sky and use their breath.'''
+
+# Java 25 is implied by Minecraft 26.1.1 (FML has no java dependency key).
+[[dependencies.skywyrms]]
+    modId="neoforge"
+    type="required"
+    versionRange="[26.1.1.15-beta,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.skywyrms]]
+    modId="minecraft"
+    type="required"
+    versionRange="[26.1.1]"
+    ordering="NONE"
+    side="BOTH"

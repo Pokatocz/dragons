@@ -1,0 +1,12 @@
+build/work/
+build/cache/
+build/__pycache__/
+build/*.log
+run/mcroot/
+run/instances/
+run/templates/
+run/cache/
+dist/test-jars/
+dist/jars/
+__pycache__/
+*.pyc

@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+Specification-Title: skywyrms
+Specification-Vendor: pokato
+Specification-Version: 1
+Implementation-Title: Skywyrms
+Implementation-Version: 1.2.3
+Implementation-Vendor: pokato
+Fabric-Minecraft-Version: 26.1
+Fabric-Loader-Version: 0.19.5
+
