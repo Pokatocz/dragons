@@ -207,6 +207,7 @@ public final class AutoTest {
          return true;
       });
       shot("egg");
+      breedingSteps();
       configSteps();
    }
 
@@ -347,6 +348,82 @@ public final class AutoTest {
       }
       check("summoned_all_six", server[0] == 6 && client == 6, "server=" + server[0] + " client=" + client);
       return true;
+   }
+
+   /**
+    * Two tamed adult dragons fed golden apples must find each other, lay an egg and keep ticking afterwards - six
+    * times, because the 1.2.3 crash (breed goal ticking once more without a partner) hit about every second breeding.
+    */
+   private static void breedingSteps() {
+      int[] eggsBefore = new int[1];
+      int[] laid = new int[1];
+      step("breed_setup", 20, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "tp @a 0 -60 0 0 10");
+         command(m, "summon skywyrms:ember_wyrm -10 -60 14 {Rotation:[90f,0f]}");
+         command(m, "summon skywyrms:ember_wyrm 10 -60 14 {Rotation:[-90f,0f]}");
+         return true;
+      });
+      for (int round = 1; round <= 6; round++) {
+         int r0 = round;
+         step("breed_love_" + round, 1, m -> {
+            int[] inLove = new int[1];
+            onServer(m, () -> {
+               ServerPlayer player = serverPlayer(m);
+               InteractionHand hand = InteractionHand.MAIN_HAND;
+               int side = 0;
+               for (DragonEntity d : dragons(m)) {
+                  if (d.isBaby()) {
+                     continue;
+                  }
+                  // 20 blocks apart: they have to walk, so the egg is laid on whichever tick they arrive
+                  d.teleportTo(side++ == 0 ? -10.0 : 10.0, -60.0, 14.0);
+                  d.tameTo(player.getUUID());
+                  d.setAge(0); // breeding cooldown off, for the next round
+                  player.setItemInHand(hand, new ItemStack(Items.GOLDEN_APPLE, 1));
+                  d.mobInteract(player, hand);
+                  if (d.isInLove()) {
+                     inLove[0]++;
+                  }
+               }
+               player.setItemInHand(hand, ItemStack.EMPTY);
+               eggsBefore[0] = serverOverworld(m).getEntitiesOfClass(DragonEggEntity.class, around(m, 48)).size();
+            });
+            if (r0 == 1) {
+               check("breeding_in_love", inLove[0] == 2, "in love=" + inLove[0]);
+            }
+            return true;
+         });
+         step("breed_wait_" + round, 20, m -> {
+            int[] eggs = new int[1];
+            onServer(m, () -> eggs[0] = serverOverworld(m).getEntitiesOfClass(DragonEggEntity.class, around(m, 48)).size());
+            if (eggs[0] > eggsBefore[0] || stepTicks > 400) {
+               if (eggs[0] > eggsBefore[0]) {
+                  laid[0]++;
+               }
+               return true;
+            }
+            return false;
+         });
+      }
+      step("breed_check", 1, m -> {
+         check("breeding_eggs_laid", laid[0] == 6, laid[0] + " of 6 rounds");
+         return true;
+      });
+      shot("bred_eggs");
+      step("breed_after", 60, m -> true);
+      step("breed_alive", 1, m -> {
+         int[] n = new int[1];
+         onServer(m, () -> {
+            for (DragonEntity d : dragons(m)) {
+               if (!d.isBaby()) {
+                  n[0]++;
+               }
+            }
+         });
+         check("breeding_parents_fine", n[0] == 2, "adult dragons=" + n[0]);
+         return true;
+      });
    }
 
    private static boolean mount(Minecraft m) {

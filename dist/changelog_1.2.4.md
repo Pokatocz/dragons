@@ -2,6 +2,9 @@ Dragons 1.2.4 - a much bigger config file
 
 Nothing changes in normal play: every new option starts at the value the mod already used. The new settings are for modpack makers and servers. You'll find them in config/skywyrms.json, which gets the new keys the first time the game starts. Restart the game or server after editing the file.
 
+Fixed
+- A crash ("Ticking entity" in DragonBreedGoal) that could happen right after two dragons laid an egg, roughly every second time when they had to walk to each other first. Thanks to Donastria for the crash report!
+
 Taming, food and breeding
 - "tameItems": the items that tame a wild adult dragon, e.g. ["diamond", "emerald", "gold_ingot"]. Default: meat (fish also works for the Tide Wyrm).
 - "tameChance": the chance that one item tames the dragon, from 0 to 1. Default 0.333 (about 1 in 3). Set it to 1.0 to tame on the first try.

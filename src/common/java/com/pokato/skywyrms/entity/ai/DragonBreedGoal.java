@@ -47,6 +47,11 @@ public class DragonBreedGoal extends Goal {
    }
 
    public void tick() {
+      // The goal ticks every tick, but canContinueToUse() is only checked every second tick: right after the egg is
+      // laid (partner cleared) one more tick can come without a partner - that crashed 1.2.3 ("target is null").
+      if (this.partner == null || !this.partner.isAlive()) {
+         return;
+      }
       this.dragon.getLookControl().setLookAt(this.partner, 10.0F, this.dragon.getMaxHeadXRot());
       double distance = this.dragon.distanceToSqr(this.partner);
       boolean close = distance < this.breedingDistance(this.partner);
