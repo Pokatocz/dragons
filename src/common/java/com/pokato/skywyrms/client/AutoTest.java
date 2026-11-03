@@ -230,7 +230,7 @@ public final class AutoTest {
                && def.abilityEnabled("fire_breath") && Math.abs(def.tameChance - 1.0F / 3.0F) < 1.0E-6F && def.wingSoundVolume == 1.0F, "");
          return true;
       });
-      step("cfg_spawn", 20, m -> {
+      step("cfg_spawn", 60, m -> {
          command(m, "kill @e[type=!minecraft:player]");
          command(m, "summon skywyrms:ember_wyrm 0 -60 8 {Rotation:[180f,0f]}");
          return true;
@@ -357,7 +357,7 @@ public final class AutoTest {
    private static void breedingSteps() {
       int[] eggsBefore = new int[1];
       int[] laid = new int[1];
-      step("breed_setup", 20, m -> {
+      step("breed_setup", 60, m -> {
          command(m, "kill @e[type=!minecraft:player]");
          command(m, "tp @a 0 -60 0 0 10");
          command(m, "summon skywyrms:ember_wyrm -10 -60 14 {Rotation:[90f,0f]}");
@@ -495,7 +495,7 @@ public final class AutoTest {
    }
 
    private static List<DragonEntity> dragons(Minecraft m) {
-      return serverOverworld(m).getEntitiesOfClass(DragonEntity.class, around(m, 96));
+      return serverOverworld(m).getEntitiesOfClass(DragonEntity.class, around(m, 96), Entity::isAlive); // dying dragons linger for their death animation
    }
 
    private static DragonEntity ember(Minecraft m) {
