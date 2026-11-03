@@ -103,6 +103,10 @@ public final class AutoTest {
 
    private static void build() {
       step("setup", 40, AutoTest::setup);
+      if ("owner".equals(SCENARIO)) {
+         ownerSteps();
+         return;
+      }
       step("summon", 60, AutoTest::summonAll);
       step("count", 1, AutoTest::countDragons);
       shot("lineup");
@@ -422,6 +426,60 @@ public final class AutoTest {
             }
          });
          check("breeding_parents_fine", n[0] == 2, "adult dragons=" + n[0]);
+         return true;
+      });
+   }
+
+   /**
+    * The answer we give players: an operator hands a dragon to someone else with
+    * /data modify entity @e[type=skywyrms:ember_wyrm,limit=1,sort=nearest] Owner set from entity <name> UUID
+    */
+   private static void ownerSteps() {
+      String[] before = new String[1];
+      step("owner_spawn", 40, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "tp @a 0 -60 0 0 10");
+         command(m, "summon skywyrms:ember_wyrm 0 -60 8 {Rotation:[180f,0f]}");
+         return true;
+      });
+      step("owner_other", 5, m -> {
+         onServer(m, () -> {
+            DragonEntity d = ember(m);
+            d.tameTo(java.util.UUID.fromString("0f0f0f0f-1111-2222-3333-444455556666")); // "somebody else"
+            before[0] = String.valueOf(DragonEntity.ownerUuid(d)) + " ownedByTester=" + d.isOwnedBy(serverPlayer(m));
+         });
+         return true;
+      });
+      step("owner_command", 20, m -> {
+         // exactly what a player types (run as Tester, at Tester's position)
+         command(m, "execute as Tester at @s run data modify entity @e[type=skywyrms:ember_wyrm,limit=1,sort=nearest] Owner set from entity Tester UUID");
+         return true;
+      });
+      step("owner_check", 1, m -> {
+         String[] after = new String[1];
+         boolean[] owned = new boolean[1];
+         onServer(m, () -> {
+            DragonEntity d = ember(m);
+            owned[0] = d != null && d.isTame() && d.isOwnedBy(serverPlayer(m));
+            after[0] = d == null ? "no dragon" : String.valueOf(DragonEntity.ownerUuid(d));
+         });
+         check("owner_transfer_command", owned[0] && !before[0].endsWith("ownedByTester=true"), "before " + before[0] + " | after " + after[0]);
+         return true;
+      });
+      step("owner_obeys", 20, m -> {
+         // the new owner can saddle and ride it (only the owner can)
+         String[] r = new String[1];
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            DragonEntity d = ember(m);
+            InteractionHand hand = InteractionHand.MAIN_HAND;
+            player.setItemInHand(hand, new ItemStack(Items.SADDLE));
+            d.mobInteract(player, hand);
+            player.setItemInHand(hand, ItemStack.EMPTY);
+            d.mobInteract(player, hand);
+            r[0] = "saddled=" + d.isSaddled() + " riding=" + (player.getVehicle() == d);
+         });
+         check("owner_new_owner_rides", r[0].contains("riding=true"), r[0]);
          return true;
       });
    }
