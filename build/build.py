@@ -143,11 +143,14 @@ tasks.named('processResources') {{ duplicatesStrategy = DuplicatesStrategy.INCLU
 """)
     open(os.path.join(wdir, "gradle.properties"), "w").write("org.gradle.jvmargs=-Xmx2500m\norg.gradle.caching=false\n")
     env = dict(os.environ, JAVA_HOME=JDK25)
+    shutil.rmtree(os.path.join(wdir, "build", "libs"), ignore_errors=True)  # an older version's jar must never be picked up
     r = subprocess.run([GRADLE, "-q", "--console=plain", "build", "-x", "test"], cwd=wdir, env=env, capture_output=True, text=True)
     if r.returncode != 0:
         return False, (r.stdout + r.stderr)
-    libs = [p for p in glob.glob(os.path.join(wdir, "build", "libs", "*.jar")) if not p.endswith("-sources.jar")]
-    shutil.copy(libs[0], out)
+    want = os.path.join(wdir, "build", "libs", f"skywyrms-{props()['mod_version']}.jar")
+    if not os.path.exists(want):
+        return False, "Loom did not produce " + want
+    shutil.copy(want, out)
     return True, ""
 
 

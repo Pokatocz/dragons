@@ -609,7 +609,7 @@ public class DragonEntity extends TamableAnimal {
 
    protected void registerGoals() {
       this.goalSelector.addGoal(0, new FloatGoal(this));
-      this.goalSelector.addGoal(1, new SitWhenOrderedToGoal(this));
+      this.goalSelector.addGoal(1, new com.pokato.skywyrms.entity.ai.DragonSitGoal(this)); // steps aside while in love (1.2.5)
       this.goalSelector.addGoal(2, new DragonBreedGoal(this));
       this.goalSelector.addGoal(2, new AbilityAttackGoal(this));
       this.goalSelector.addGoal(3, new MeleeAttackGoal(this, 1.25, true));

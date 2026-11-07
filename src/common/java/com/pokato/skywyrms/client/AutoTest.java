@@ -107,6 +107,10 @@ public final class AutoTest {
          ownerSteps();
          return;
       }
+      if ("breedstay".equals(SCENARIO)) {
+         breedStaySteps();
+         return;
+      }
       step("summon", 60, AutoTest::summonAll);
       step("count", 1, AutoTest::countDragons);
       shot("lineup");
@@ -212,6 +216,7 @@ public final class AutoTest {
       });
       shot("egg");
       breedingSteps();
+      breedStaySteps();
       configSteps();
    }
 
@@ -480,6 +485,90 @@ public final class AutoTest {
             r[0] = "saddled=" + d.isSaddled() + " riding=" + (player.getVehicle() == d);
          });
          check("owner_new_owner_rides", r[0].contains("riding=true"), r[0]);
+         return true;
+      });
+   }
+
+   /** Two tamed dragons told to stay (sneak + right-click), fed golden apples: they must still breed. */
+   private static void breedStaySteps() {
+      int[] eggsBefore = new int[1];
+      step("stay_setup", 60, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "tp @a 0 -60 0 0 10");
+         command(m, "summon skywyrms:ember_wyrm -3 -60 12 {Rotation:[90f,0f]}");
+         command(m, "summon skywyrms:frost_wyrm 3 -60 12 {Rotation:[-90f,0f]}");
+         return true;
+      });
+      step("stay_order", 40, m -> {
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            InteractionHand hand = InteractionHand.MAIN_HAND;
+            for (DragonEntity d : dragons(m)) {
+               d.tameTo(player.getUUID());
+               d.setSaddled(true);
+               // sneak + right-click with an empty hand, like a player: "will stay here"
+               player.setItemInHand(hand, ItemStack.EMPTY);
+               player.setShiftKeyDown(true);
+               d.mobInteract(player, hand);
+               player.setShiftKeyDown(false);
+            }
+         });
+         return true;
+      });
+      step("stay_love", 1, m -> {
+         String[] r = new String[1];
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            InteractionHand hand = InteractionHand.MAIN_HAND;
+            int staying = 0;
+            int inLove = 0;
+            for (DragonEntity d : dragons(m)) {
+               if (d.isOrderedToSit()) {
+                  staying++;
+               }
+               player.setItemInHand(hand, new ItemStack(Items.GOLDEN_APPLE, 1));
+               d.mobInteract(player, hand);
+               if (d.isInLove()) {
+                  inLove++;
+               }
+            }
+            player.setItemInHand(hand, ItemStack.EMPTY);
+            eggsBefore[0] = serverOverworld(m).getEntitiesOfClass(DragonEggEntity.class, around(m, 48)).size();
+            r[0] = "staying=" + staying + " inLove=" + inLove;
+         });
+         check("stay_dragons_staying_in_love", r[0].equals("staying=2 inLove=2"), r[0]);
+         return true;
+      });
+      step("stay_wait", 1, m -> {
+         int[] eggs = new int[1];
+         onServer(m, () -> eggs[0] = serverOverworld(m).getEntitiesOfClass(DragonEggEntity.class, around(m, 48)).size());
+         if (stepTicks % 40 == 1) {
+            onServer(m, () -> {
+               for (DragonEntity d : dragons(m)) {
+                  Skywyrms.LOGGER.info("[autotest] DIAG {} pos={} love={} sitPose={} ordered={} navDone={} flying={} onGround={} age={}", d.getKind(),
+                        String.format(Locale.ROOT, "%.1f,%.1f,%.1f", d.getX(), d.getY(), d.getZ()), d.isInLove(), d.isInSittingPose(),
+                        d.isOrderedToSit(), d.getNavigation().isDone(), d.isFlying(), d.onGround(), d.getAge());
+               }
+            });
+         }
+         if (eggs[0] > eggsBefore[0] || stepTicks > 500) {
+            check("stay_breeding_egg_laid", eggs[0] > eggsBefore[0], "after " + stepTicks + " ticks");
+            return true;
+         }
+         return false;
+      });
+      shot("stay_bred");
+      step("stay_after", 60, m -> true);
+      step("stay_still_staying", 1, m -> {
+         int[] staying = new int[1];
+         onServer(m, () -> {
+            for (DragonEntity d : dragons(m)) {
+               if (!d.isBaby() && d.isOrderedToSit()) {
+                  staying[0]++;
+               }
+            }
+         });
+         check("stay_order_kept_after_breeding", staying[0] == 2, "staying=" + staying[0]);
          return true;
       });
    }

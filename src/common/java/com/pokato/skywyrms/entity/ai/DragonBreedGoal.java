@@ -55,7 +55,8 @@ public class DragonBreedGoal extends Goal {
       this.dragon.getLookControl().setLookAt(this.partner, 10.0F, this.dragon.getMaxHeadXRot());
       double distance = this.dragon.distanceToSqr(this.partner);
       boolean close = distance < this.breedingDistance(this.partner);
-      if (!close && !this.dragon.isOrderedToSit()) {
+      if (!close) {
+         // also when told to stay: feeding the golden apple is the order to go and find the partner (1.2.5)
          this.dragon.getNavigation().moveTo(this.partner, 1.0);
       } else if (close) {
          this.dragon.getNavigation().stop();
