@@ -175,10 +175,9 @@ public class DragonEggItem extends Item {
             genes = DragonGenes.wild(this.kind, this.kind, level.getRandom());
          }
 
-         UUID owner = owner(var11);
-         if (owner == null && player != null) {
-            owner = player.getUUID();
-         }
+         // 1.2.6: an egg belongs to whoever places it, so an egg can be given to a friend
+         // (in the world only its owner can pick it up; dispensers and the like keep the stored owner)
+         UUID owner = player != null ? player.getUUID() : owner(var11);
 
          DragonEggEntity egg = DragonEggEntity.create(level, genes, owner, progress(var11));
          if (egg == null) {

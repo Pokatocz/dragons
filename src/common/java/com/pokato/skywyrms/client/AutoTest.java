@@ -111,6 +111,11 @@ public final class AutoTest {
          breedStaySteps();
          return;
       }
+      if ("spawn".equals(SCENARIO)) {
+         spawnSteps();
+         eggShareSteps();
+         return;
+      }
       step("summon", 60, AutoTest::summonAll);
       step("count", 1, AutoTest::countDragons);
       shot("lineup");
@@ -571,6 +576,186 @@ public final class AutoTest {
          check("stay_order_kept_after_breeding", staying[0] == 2, "staying=" + staying[0]);
          return true;
       });
+   }
+
+   /** Natural spawns: a tamed dragon next to the player must not block them, and under a leaf canopy they use the treetops. */
+   private static void spawnSteps() {
+      step("spawn_tamed_setup", 40, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "tp @a 0 -60 0 0 10");
+         command(m, "summon skywyrms:tide_wyrm 3 -60 3");
+         return true;
+      });
+      step("spawn_tamed_near", 5, m -> {
+         int[] ok = new int[1];
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            for (DragonEntity d : dragons(m)) {
+               d.tameTo(player.getUUID());
+            }
+            for (int i = 0; i < 40; i++) {
+               DragonEntity d = com.pokato.skywyrms.server.DragonSpawner.trySpawn(serverOverworld(m), player, ModConfig.get());
+               if (d != null) {
+                  ok[0]++;
+                  d.discard();
+               }
+            }
+         });
+         check("spawn_with_own_dragon_nearby", ok[0] >= 10, ok[0] + " of 40 attempts spawned");
+         return true;
+      });
+      step("spawn_canopy_setup", 40, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         for (int y : new int[] {-58, -57}) {
+            for (int[] q : new int[][] {{-100, -100}, {0, -100}, {-100, 0}, {0, 0}}) {
+               command(m, String.format(Locale.ROOT, "fill %d %d %d %d %d %d minecraft:oak_leaves[persistent=true]", q[0], y, q[1], q[0] + 99, y, q[1] + 99));
+            }
+         }
+         command(m, "tp @a 0 -56 0 0 10");
+         return true;
+      });
+      step("spawn_canopy", 5, m -> {
+         int[] ok = new int[1];
+         int[] top = new int[1];
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            for (int i = 0; i < 40; i++) {
+               DragonEntity d = com.pokato.skywyrms.server.DragonSpawner.trySpawn(serverOverworld(m), player, ModConfig.get());
+               if (d != null) {
+                  ok[0]++;
+                  if (d.getY() > -57.5) {
+                     top[0]++;
+                  }
+                  d.discard();
+               }
+            }
+         });
+         check("spawn_under_leaf_canopy", ok[0] >= 10 && top[0] == ok[0], ok[0] + " of 40 spawned, " + top[0] + " on the treetops");
+         return true;
+      });
+      step("spawn_canopy_clear", 20, m -> {
+         for (int y : new int[] {-58, -57}) {
+            for (int[] q : new int[][] {{-100, -100}, {0, -100}, {-100, 0}, {0, 0}}) {
+               command(m, String.format(Locale.ROOT, "fill %d %d %d %d %d %d minecraft:air", q[0], y, q[1], q[0] + 99, y, q[1] + 99));
+            }
+         }
+         command(m, "tp @a 0 -60 0 0 10");
+         return true;
+      });
+   }
+
+   /** Eggs shared between players: co-owner pickup, a placed egg belongs to whoever placed it, breeding two players' dragons. */
+   private static void eggShareSteps() {
+      java.util.UUID friend = java.util.UUID.fromString("0f0f0f0f-1111-2222-3333-444455556666");
+      java.util.UUID stranger = java.util.UUID.fromString("0e0e0e0e-9999-8888-7777-666655554444");
+      step("egg_share_setup", 20, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "gamemode survival @a");
+         command(m, "clear @a");
+         return true;
+      });
+      step("egg_coowner_pickup", 5, m -> {
+         String[] r = new String[1];
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+            com.pokato.skywyrms.entity.DragonGenes g = com.pokato.skywyrms.entity.DragonGenes.wild(DragonKind.FROST, DragonKind.FROST, level.getRandom());
+            DragonEggEntity mine = DragonEggEntity.create(level, g, friend, 0);
+            mine.setCoOwner(player.getUUID());
+            mine.placeNear(level, new net.minecraft.world.phys.Vec3(2, -60, 3));
+            level.addFreshEntity(mine);
+            DragonEggEntity notMine = DragonEggEntity.create(level, g, friend, 0);
+            notMine.setCoOwner(stranger);
+            notMine.placeNear(level, new net.minecraft.world.phys.Vec3(-2, -60, 3));
+            level.addFreshEntity(notMine);
+            player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            interact(mine, player);
+            interact(notMine, player);
+            int eggsInInventory = 0;
+            for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+               if (player.getInventory().getItem(i).getItem() instanceof com.pokato.skywyrms.item.DragonEggItem) {
+                  eggsInInventory++;
+               }
+            }
+            r[0] = "coOwnerTook=" + mine.isRemoved() + " strangerEggStays=" + !notMine.isRemoved() + " inInventory=" + eggsInInventory;
+         });
+         check("egg_coowner_can_claim", r[0].equals("coOwnerTook=true strangerEggStays=true inInventory=1"), r[0]);
+         return true;
+      });
+      step("egg_gift_place", 10, m -> {
+         String[] r = new String[1];
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+            com.pokato.skywyrms.entity.DragonGenes g = com.pokato.skywyrms.entity.DragonGenes.wild(DragonKind.THORN, DragonKind.THORN, level.getRandom());
+            ItemStack gift = com.pokato.skywyrms.registry.ModItems.eggStack(g, friend, 0); // somebody else's egg, handed over
+            player.setItemInHand(InteractionHand.MAIN_HAND, gift);
+            net.minecraft.core.BlockPos ground = new net.minecraft.core.BlockPos(0, -61, 6);
+            net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
+                  net.minecraft.world.phys.Vec3.atCenterOf(ground).add(0, 0.5, 0), net.minecraft.core.Direction.UP, ground, false);
+            gift.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+            DragonEggEntity placed = null;
+            for (DragonEggEntity e : level.getEntitiesOfClass(DragonEggEntity.class, new AABB(ground).inflate(3))) {
+               placed = e;
+            }
+            r[0] = placed == null ? "no egg placed" : "owner is placer=" + player.getUUID().equals(placed.owner());
+         });
+         check("egg_placed_belongs_to_placer", r[0].equals("owner is placer=true"), r[0]);
+         return true;
+      });
+      int[] eggsBefore = new int[1];
+      step("egg_two_players_setup", 40, m -> {
+         command(m, "gamemode creative @a");
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "summon skywyrms:ember_wyrm -3 -60 12 {Rotation:[90f,0f]}");
+         command(m, "summon skywyrms:storm_wyrm 3 -60 12 {Rotation:[-90f,0f]}");
+         return true;
+      });
+      step("egg_two_players_love", 1, m -> {
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            InteractionHand hand = InteractionHand.MAIN_HAND;
+            for (DragonEntity d : dragons(m)) {
+               if (d.getKind() == DragonKind.EMBER) {
+                  d.tameTo(friend);   // the friend's dragon, fed by the friend (offline here: no love cause)
+                  d.setInLove(null);
+               } else {
+                  d.tameTo(player.getUUID());
+                  player.setItemInHand(hand, new ItemStack(Items.GOLDEN_APPLE, 1));
+                  d.mobInteract(player, hand);
+               }
+            }
+            player.setItemInHand(hand, ItemStack.EMPTY);
+            eggsBefore[0] = serverOverworld(m).getEntitiesOfClass(DragonEggEntity.class, around(m, 48)).size();
+         });
+         return true;
+      });
+      step("egg_two_players_wait", 1, m -> {
+         String[] r = new String[1];
+         onServer(m, () -> {
+            List<DragonEggEntity> eggs = serverOverworld(m).getEntitiesOfClass(DragonEggEntity.class, around(m, 48));
+            if (eggs.size() > eggsBefore[0]) {
+               DragonEggEntity e = eggs.get(eggs.size() - 1);
+               java.util.UUID me = serverPlayer(m).getUUID();
+               boolean both = (me.equals(e.owner()) && friend.equals(e.coOwner())) || (friend.equals(e.owner()) && me.equals(e.coOwner()));
+               r[0] = "both players can claim=" + both;
+            }
+         });
+         if (r[0] != null || stepTicks > 500) {
+            check("egg_from_two_players_dragons", "both players can claim=true".equals(r[0]), r[0] == null ? "no egg" : r[0]);
+            return true;
+         }
+         return false;
+      });
+   }
+
+   /** right-click with the main hand, the public way (Mob.mobInteract is protected) */
+   private static void interact(net.minecraft.world.entity.Mob mob, ServerPlayer player) {
+      //#if MC >= 260000
+      mob.interact(player, InteractionHand.MAIN_HAND, mob.position());
+      //#else
+      mob.interact(player, InteractionHand.MAIN_HAND);
+      //#endif
    }
 
    private static boolean mount(Minecraft m) {

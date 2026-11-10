@@ -432,10 +432,26 @@ public class DragonEntity extends TamableAnimal {
          double out = Math.max(this.getBbWidth(), mate.getBbWidth()) * 0.5 + 1.2;
          DragonEggEntity egg = DragonEggEntity.create(level, child, owner, 0);
          if (egg != null) {
+            // 1.2.6: when two players' dragons bred, the other player may claim the egg as well
+            UUID co = null;
+            ServerPlayer mateCause = mate.getLoveCause();
+            ServerPlayer thisCause = this.getLoveCause();
+            for (UUID candidate : new UUID[]{mateCause != null ? mateCause.getUUID() : null, ownerUuid(mate),
+                  thisCause != null ? thisCause.getUUID() : null, ownerUuid(this)}) {
+               if (candidate != null && !candidate.equals(owner)) {
+                  co = candidate;
+                  break;
+               }
+            }
+            egg.setCoOwner(co);
             egg.placeNear(level, between.add(side.scale(this.random.nextBoolean() ? out : -out)));
             level.addFreshEntity(egg);
             if (cause != null) {
                message(cause, Component.translatable("message.skywyrms.egg_laid", new Object[]{egg.getDisplayName()}));
+            }
+            ServerPlayer coPlayer = co == null ? null : level.getServer().getPlayerList().getPlayer(co);
+            if (coPlayer != null) {
+               message(coPlayer, Component.translatable("message.skywyrms.egg_laid", new Object[]{egg.getDisplayName()}));
             }
          }
 

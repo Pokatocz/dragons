@@ -62,81 +62,111 @@ public final class DragonSpawner {
       //#endif
    }
 
+   /**
+    * One natural spawn attempt 40-90 blocks from the player. The biome at that point picks the kind. 1.2.6: tamed
+    * dragons no longer block spawns (only wild ones count for spawnSpacing), and when a big dragon has no room on the
+    * ground there (forests, jungles) it may stand on the treetops or a few blocks to the side instead.
+    */
    public static DragonEntity trySpawn(ServerLevel level, ServerPlayer player, ModConfig config) {
       RandomSource random = level.getRandom();
       double angle = random.nextDouble() * Math.PI * 2.0;
       double distance = 40.0 + random.nextDouble() * 50.0;
-      int x = Mth.floor(player.getX() + Math.cos(angle) * distance);
-      int z = Mth.floor(player.getZ() + Math.sin(angle) * distance);
-      if (!level.hasChunkAt(new BlockPos(x, 0, z))) {
-         return null;
-      } else {
-         int y;
-         if (level.dimensionType().hasCeiling()) {
-            y = findFloor(level, x, Mth.floor(player.getY()), z);
-         } else {
-            y = level.getHeight(Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+      int x0 = Mth.floor(player.getX() + Math.cos(angle) * distance);
+      int z0 = Mth.floor(player.getZ() + Math.sin(angle) * distance);
+      boolean ceiling = level.dimensionType().hasCeiling();
+      DragonKind kind = null;
+      DragonKind blood = null;
+
+      for (int attempt = 0; attempt < 6; attempt++) {
+         int x = attempt == 0 ? x0 : x0 + random.nextInt(25) - 12;
+         int z = attempt == 0 ? z0 : z0 + random.nextInt(25) - 12;
+         if (!level.hasChunkAt(new BlockPos(x, 0, z))) {
+            if (attempt == 0) {
+               return null;
+            }
+            continue;
          }
 
-         //#if MC >= 12102
-         if (y > level.getMinY() + 1 && y < level.getMaxY() - 8) {
-         //#else
-         if (y > level.getMinBuildHeight() + 1 && y < level.getMaxBuildHeight() - 8) {
-         //#endif
-            BlockPos pos = new BlockPos(x, y, z);
-            List<DragonKind> options = kindsFor(level.getBiome(pos));
+         int ground = ceiling ? findFloor(level, x, Mth.floor(player.getY()), z) : level.getHeight(Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+         if (!inHeightRange(level, ground)) {
+            if (attempt == 0) {
+               return null;
+            }
+            continue;
+         }
+
+         if (kind == null) {
+            BlockPos at = new BlockPos(x, ground, z);
+            List<DragonKind> options = kindsFor(level.getBiome(at));
             if (options.isEmpty()) {
                return null;
-            } else {
-               DragonKind kind = options.get(random.nextInt(options.size()));
-               DragonKind blood = kind;
-               if (options.size() > 1 && random.nextFloat() < config.wildHybridChance) {
-                  List<DragonKind> others = new ArrayList<>(options);
-                  others.remove(kind);
-                  blood = others.get(random.nextInt(others.size()));
-               }
-
-               if (!level.getFluidState(pos.below()).isEmpty() && kind != DragonKind.TIDE) {
-                  return null;
-               } else {
-                  double spacing = config.spawnSpacing;
-                  if (!level.getEntitiesOfClass(DragonEntity.class, new AABB(pos).inflate(spacing, 96.0, spacing)).isEmpty()) {
-                     return null;
-                  } else {
-                     //#if MC >= 12102
-                     DragonEntity dragon = (DragonEntity)ModEntities.type(kind).create(level, EntitySpawnReason.NATURAL);
-                     //#else
-                     DragonEntity dragon = (DragonEntity)ModEntities.type(kind).create(level);
-                     //#endif
-                     if (dragon == null) {
-                        return null;
-                     } else {
-                        //#if MC >= 12105
-                        dragon.snapTo(x + 0.5, y, z + 0.5, random.nextFloat() * 360.0F, 0.0F);
-                        //#else
-                        dragon.moveTo(x + 0.5, y, z + 0.5, random.nextFloat() * 360.0F, 0.0F);
-                        //#endif
-                        if (!level.noCollision(dragon)) {
-                           return null;
-                        } else {
-                           dragon.setGenes(DragonGenes.wild(kind, blood, random), true);
-                           //#if MC >= 12102
-                           dragon.finalizeSpawn(level, level.getCurrentDifficultyAt(pos), EntitySpawnReason.NATURAL, null);
-                           //#elif MC >= 12005 && MC < 12102
-                           dragon.finalizeSpawn(level, level.getCurrentDifficultyAt(pos), MobSpawnType.NATURAL, null);
-                           //#else
-                           dragon.finalizeSpawn(level, level.getCurrentDifficultyAt(pos), MobSpawnType.NATURAL, null, null);
-                           //#endif
-                           return level.addFreshEntity(dragon) ? dragon : null;
-                        }
-                     }
-                  }
-               }
             }
-         } else {
-            return null;
+
+            kind = options.get(random.nextInt(options.size()));
+            blood = kind;
+            if (options.size() > 1 && random.nextFloat() < config.wildHybridChance) {
+               List<DragonKind> others = new ArrayList<>(options);
+               others.remove(kind);
+               blood = others.get(random.nextInt(others.size()));
+            }
+
+            double spacing = config.spawnSpacing;
+            if (!level.getEntitiesOfClass(DragonEntity.class, new AABB(at).inflate(spacing, 96.0, spacing), d -> !d.isTame()).isEmpty()) {
+               return null;
+            }
+         }
+
+         // the ground first, then on top of the trees (MOTION_BLOCKING counts leaves)
+         int canopy = ceiling ? ground : level.getHeight(Types.MOTION_BLOCKING, x, z);
+         for (int y : canopy > ground ? new int[]{ground, canopy} : new int[]{ground}) {
+            if (!inHeightRange(level, y)) {
+               continue;
+            }
+
+            BlockPos pos = new BlockPos(x, y, z);
+            if (y == ground && !level.getFluidState(pos.below()).isEmpty() && kind != DragonKind.TIDE) {
+               continue;
+            }
+
+            //#if MC >= 12102
+            DragonEntity dragon = (DragonEntity)ModEntities.type(kind).create(level, EntitySpawnReason.NATURAL);
+            //#else
+            DragonEntity dragon = (DragonEntity)ModEntities.type(kind).create(level);
+            //#endif
+            if (dragon == null) {
+               return null;
+            }
+
+            //#if MC >= 12105
+            dragon.snapTo(x + 0.5, y, z + 0.5, random.nextFloat() * 360.0F, 0.0F);
+            //#else
+            dragon.moveTo(x + 0.5, y, z + 0.5, random.nextFloat() * 360.0F, 0.0F);
+            //#endif
+            if (!level.noCollision(dragon)) {
+               continue;
+            }
+
+            dragon.setGenes(DragonGenes.wild(kind, blood, random), true);
+            //#if MC >= 12102
+            dragon.finalizeSpawn(level, level.getCurrentDifficultyAt(pos), EntitySpawnReason.NATURAL, null);
+            //#elif MC >= 12005 && MC < 12102
+            dragon.finalizeSpawn(level, level.getCurrentDifficultyAt(pos), MobSpawnType.NATURAL, null);
+            //#else
+            dragon.finalizeSpawn(level, level.getCurrentDifficultyAt(pos), MobSpawnType.NATURAL, null, null);
+            //#endif
+            return level.addFreshEntity(dragon) ? dragon : null;
          }
       }
+
+      return null;
+   }
+
+   private static boolean inHeightRange(ServerLevel level, int y) {
+      //#if MC >= 12102
+      return y > level.getMinY() + 1 && y < level.getMaxY() - 8;
+      //#else
+      return y > level.getMinBuildHeight() + 1 && y < level.getMaxBuildHeight() - 8;
+      //#endif
    }
 
    private static int findFloor(ServerLevel level, int x, int around, int z) {

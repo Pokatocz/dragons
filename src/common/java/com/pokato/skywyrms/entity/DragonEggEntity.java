@@ -58,6 +58,8 @@ public class DragonEggEntity extends Mob {
    private static final EntityDataAccessor<Boolean> DATA_WARM = SynchedEntityData.defineId(DragonEggEntity.class, EntityDataSerializers.BOOLEAN);
    private DragonGenes genes;
    private UUID owner;
+   /** 1.2.6: the other parent's player when two players' dragons bred - they may pick the egg up too */
+   private UUID coOwner;
    private int progress;
    public int wobbleTicks;
    public float wobbleStrength;
@@ -167,6 +169,20 @@ public class DragonEggEntity extends Mob {
 
    public UUID owner() {
       return this.owner;
+   }
+
+   public UUID coOwner() {
+      return this.coOwner;
+   }
+
+   public void setCoOwner(UUID coOwner) {
+      this.coOwner = coOwner != null && !coOwner.equals(this.owner) ? coOwner : null;
+   }
+
+   /** owner or co-owner (or nobody owns it) */
+   public boolean isClaimableBy(Player player) {
+      UUID id = player.getUUID();
+      return this.owner == null || this.owner.equals(id) || id.equals(this.coOwner);
    }
 
    public int progressTicks() {
@@ -348,12 +364,14 @@ public class DragonEggEntity extends Mob {
          return InteractionResult.SUCCESS;
       } else if (stack.isEmpty() && hand == InteractionHand.MAIN_HAND) {
          if (!client) {
-            if (this.owner != null && !this.owner.equals(player.getUUID()) && !player.isCreative()) {
+            boolean claimable = this.isClaimableBy(player);
+            if (!claimable && !player.isCreative()) {
                DragonEntity.message(player, Component.translatable("message.skywyrms.not_your_egg"));
                return InteractionResult.SUCCESS;
             }
 
-            ItemStack egg = ModItems.eggStack(this.genes(), this.owner, this.progress);
+            // the owner or co-owner who picks the egg up takes it (a creative player just moves it for the owner)
+            ItemStack egg = ModItems.eggStack(this.genes(), claimable ? player.getUUID() : this.owner, this.progress);
             if (!player.getInventory().add(egg) && this.level() instanceof ServerLevel level) {
                //#if MC >= 12102
                this.spawnAtLocation(level, egg);
@@ -480,6 +498,14 @@ public class DragonEggEntity extends Mob {
          //#endif
       }
 
+      if (this.coOwner != null) {
+         //#if MC >= 12106
+         output.putString("EggCoOwner", this.coOwner.toString());
+         //#else
+         tag.putString("EggCoOwner", this.coOwner.toString());
+         //#endif
+      }
+
       //#if MC >= 12106
       output.putInt("Incubation", this.progress);
       //#else
@@ -512,6 +538,18 @@ public class DragonEggEntity extends Mob {
          this.owner = owner.isEmpty() ? null : UUID.fromString(owner);
       } catch (IllegalArgumentException var5) {
          this.owner = null;
+      }
+
+      //#if MC >= 12106
+      String coOwner = input.getStringOr("EggCoOwner", "");
+      //#else
+      String coOwner = Nbt.getString(tag, "EggCoOwner", "");
+      //#endif
+
+      try {
+         this.coOwner = coOwner.isEmpty() ? null : UUID.fromString(coOwner);
+      } catch (IllegalArgumentException e) {
+         this.coOwner = null;
       }
 
       //#if MC >= 12106
