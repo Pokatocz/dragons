@@ -338,7 +338,10 @@ public final class AutoTest {
 
    // ---------------------------------------------------------------- steps
    private static boolean setup(Minecraft m) {
-      for (String c : new String[] {"time set noon", "weather clear", "gamerule doDaylightCycle false", "gamerule doMobSpawning false",
+      // no wild dragon may walk into a test: since 1.2.6 the tamed test dragons no longer keep them away, and on
+      // 1.21.11+ the old gamerule names below are rejected (the scenario "spawnnatural" switches this on again)
+      ModConfig.get().naturalSpawning = false;
+      for (String c : new String[] {"time set noon", "weather clear", "gamerule doDaylightCycle false", "gamerule doMobSpawning false", "gamerule spawn_mobs false",
             "kill @e[type=!minecraft:player]", "gamemode creative @a", "tp @a 0 -60 0 0 0"}) {
          command(m, c);
       }
@@ -764,6 +767,7 @@ public final class AutoTest {
       step("natural_start", 320, m -> {
          onServer(m, () -> {
             ModConfig config = ModConfig.get();
+            config.naturalSpawning = true;
             config.spawnIntervalTicks = 20;
             config.spawnChance = 1.0F;
             config.spawnSpacing = 0;
@@ -782,6 +786,7 @@ public final class AutoTest {
                kinds.append(' ').append(d.getKind()).append('@').append((int)Math.sqrt(d.distanceToSqr(serverPlayer(m))));
             }
             ModConfig config = ModConfig.get();
+            config.naturalSpawning = false;
             config.spawnIntervalTicks = 400;
             config.spawnChance = 0.12F;
             config.spawnSpacing = 96;
