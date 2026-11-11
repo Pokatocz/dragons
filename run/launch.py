@@ -3,7 +3,7 @@
 
     python3 run/launch.py client --loader fabric --mc 1.21.11 --mods a.jar,b.jar --instance NAME --fresh \
         [--jvm "-Dskywyrms.autotest=true"] [--wait-file autotest_done.txt] [--wait-log REGEX] [--settle 3] \
-        [--timeout 900] [--world flat|none]
+        [--timeout 900] [--world flat|normal|none]
 
 Install: portablemc (versions, libraries, assets, Fabric/Forge/NeoForge) under run/mcroot.
 World: a superflat world made once per version with that version's vanilla dedicated server (run/templates),
@@ -80,11 +80,11 @@ def fabric_api_jar(mc):
 
 
 # ------------------------------------------------------------------ world template
-def template(mc):
-    world = os.path.join(TEMPLATES, mc, "world")
+def template(mc, kind="flat"):
+    world = os.path.join(TEMPLATES, mc, "world" if kind == "flat" else "world-" + kind)
     if os.path.exists(os.path.join(world, "level.dat")):
         return world
-    log(f"generating flat world for {mc} ...")
+    log(f"generating {kind} world for {mc} ...")
     man = json.load(urllib.request.urlopen("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"))
     vj = json.load(urllib.request.urlopen(next(v["url"] for v in man["versions"] if v["id"] == mc)))
     sdir = os.path.join(TEMPLATES, mc, "server")
@@ -92,7 +92,8 @@ def template(mc):
     jar = fetch(vj["downloads"]["server"]["url"], os.path.join(sdir, "server.jar"))
     open(os.path.join(sdir, "eula.txt"), "w").write("eula=true\n")
     open(os.path.join(sdir, "server.properties"), "w").write(
-        "level-type=minecraft\\:flat\ngamemode=creative\ngenerate-structures=false\nspawn-protection=0\nonline-mode=false\n"
+        ("level-type=minecraft\\:flat\n" if kind == "flat" else "level-type=minecraft\\:normal\nlevel-seed=20261111\n")
+        + "gamemode=creative\ngenerate-structures=false\nspawn-protection=0\nonline-mode=false\n"
         "spawn-monsters=false\nspawn-npcs=false\nspawn-animals=false\ndifficulty=peaceful\nserver-port=25599\nlevel-name=world\n")
     p = subprocess.Popen([java_for(mc), "-Xmx1g", "-jar", jar, "nogui"], cwd=sdir, stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -183,8 +184,8 @@ def client(a):
         k, v = line.split(":", 1)
         keep[k] = v
     open(opt, "w").write("".join(f"{k}:{v}\n" for k, v in keep.items()))
-    if a.world == "flat" and not os.path.exists(os.path.join(inst, "saves", "world", "level.dat")):
-        shutil.copytree(template(a.mc), os.path.join(inst, "saves", "world"), dirs_exist_ok=True)
+    if a.world != "none" and not os.path.exists(os.path.join(inst, "saves", "world", "level.dat")):
+        shutil.copytree(template(a.mc, a.world), os.path.join(inst, "saves", "world"), dirs_exist_ok=True)
     if a.wait_file:
         try:
             os.remove(os.path.join(inst, a.wait_file))
@@ -201,7 +202,7 @@ def client(a):
     jvm = ["-Xmx2200m", "-Djava.awt.headless=true"] + (a.jvm.split() if a.jvm else [])
     cmd = ["portablemc", "--main-dir", MCROOT, "start", spec, "--mc-dir", inst, "-u", "Tester", "--jvm", java_for(a.mc),
            "--fetch-exclude-all", "--resolution", "1280x720", "--jvm-arg=" + ",".join(jvm)]
-    if a.world == "flat":
+    if a.world != "none":
         cmd += ["--join-world", "world"]
     open(os.path.join(inst, "launch-command.txt"), "w").write(" ".join(cmd) + "\n")
     logf = open(os.path.join(inst, "client.log"), "w")
@@ -270,7 +271,7 @@ def main():
     c.add_argument("--mc", required=True)
     c.add_argument("--instance", required=True)
     c.add_argument("--mods", default="")
-    c.add_argument("--world", default="flat", choices=["flat", "none"])
+    c.add_argument("--world", default="flat", choices=["flat", "normal", "none"])
     c.add_argument("--jvm", default="")
     c.add_argument("--timeout", type=float, default=900)
     c.add_argument("--wait-file")

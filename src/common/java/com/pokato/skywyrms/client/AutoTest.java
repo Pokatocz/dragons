@@ -116,6 +116,10 @@ public final class AutoTest {
          eggShareSteps();
          return;
       }
+      if ("spawnstat".equals(SCENARIO) || "spawnnatural".equals(SCENARIO)) {
+         spawnStatSteps("spawnstat".equals(SCENARIO));
+         return;
+      }
       step("summon", 60, AutoTest::summonAll);
       step("count", 1, AutoTest::countDragons);
       shot("lineup");
@@ -642,6 +646,275 @@ public final class AutoTest {
          command(m, "tp @a 0 -60 0 0 10");
          return true;
       });
+   }
+
+   // ---------------------------------------------------------------- spawning on real terrain (launcher: --world normal)
+   /**
+    * "spawnstat": goes to one place per biome in a normal world and tries the same 600 spawn points with the placement
+    * of 1.2.5, of 1.2.6 and the current one (nothing is added to the world), then lets the real server tick spawn
+    * dragons on a plain. "spawnnatural": only that last part.
+    */
+   @SuppressWarnings("unchecked")
+   private static void spawnStatSteps(boolean stats) {
+      Object[][] biomes = {
+         {"plains", net.minecraft.world.level.biome.Biomes.PLAINS},
+         {"meadow", net.minecraft.world.level.biome.Biomes.MEADOW},
+         {"windswept_hills", net.minecraft.world.level.biome.Biomes.WINDSWEPT_HILLS},
+         {"jagged_peaks", net.minecraft.world.level.biome.Biomes.JAGGED_PEAKS},
+         {"forest", net.minecraft.world.level.biome.Biomes.FOREST},
+         {"dark_forest", net.minecraft.world.level.biome.Biomes.DARK_FOREST},
+         {"jungle", net.minecraft.world.level.biome.Biomes.JUNGLE},
+         {"taiga", net.minecraft.world.level.biome.Biomes.TAIGA},
+         {"swamp", net.minecraft.world.level.biome.Biomes.SWAMP},
+         {"savanna", net.minecraft.world.level.biome.Biomes.SAVANNA},
+         {"badlands", net.minecraft.world.level.biome.Biomes.BADLANDS},
+         {"desert", net.minecraft.world.level.biome.Biomes.DESERT},
+         {"snowy_plains", net.minecraft.world.level.biome.Biomes.SNOWY_PLAINS},
+         {"snowy_taiga", net.minecraft.world.level.biome.Biomes.SNOWY_TAIGA},
+         {"ocean", net.minecraft.world.level.biome.Biomes.OCEAN},
+         {"beach", net.minecraft.world.level.biome.Biomes.BEACH},
+         {"river", net.minecraft.world.level.biome.Biomes.RIVER}};
+      int[] plains = new int[3];
+      step("stat_setup", 20, m -> {
+         m.options.renderDistance().set(8);
+         command(m, "gamemode spectator @a");
+         return true;
+      });
+      for (Object[] b : biomes) {
+         String name = (String)b[0];
+         net.minecraft.resources.ResourceKey<net.minecraft.world.level.biome.Biome> key = (net.minecraft.resources.ResourceKey<net.minecraft.world.level.biome.Biome>)b[1];
+         int[] at = name.equals("plains") ? plains : new int[3]; // x, z, found
+         if (!stats && at != plains) {
+            continue;
+         }
+         step("stat_go_" + name, 20, m -> {
+            onServer(m, () -> {
+               var found = serverOverworld(m).findClosestBiome3d(h -> h.is(key), new net.minecraft.core.BlockPos(0, 70, 0), 6400, 32, 64);
+               if (found != null) {
+                  // the nearest point is on the biome's edge: go 100 blocks further in
+                  double x = found.getFirst().getX();
+                  double z = found.getFirst().getZ();
+                  double len = Math.max(1.0, Math.sqrt(x * x + z * z));
+                  at[0] = (int)(x + x / len * 100.0);
+                  at[1] = (int)(z + z / len * 100.0);
+                  at[2] = 1;
+                  serverCommand(m, String.format(Locale.ROOT, "tp @a %d 160 %d", at[0], at[1]));
+               }
+            });
+            return true;
+         });
+         step("stat_load_" + name, 10, m -> {
+            boolean[] loaded = {at[2] == 0};
+            if (!loaded[0]) {
+               onServer(m, () -> {
+                  boolean all = true;
+                  for (int i = 0; i < 16 && all; i++) {
+                     double a = i * Math.PI / 8.0;
+                     all = serverOverworld(m).hasChunkAt(new net.minecraft.core.BlockPos(at[0] + (int)(Math.cos(a) * 106.0), 0, at[1] + (int)(Math.sin(a) * 106.0)));
+                  }
+                  loaded[0] = all;
+               });
+            }
+            return loaded[0] || stepTicks > 560;
+         });
+         if (!stats) {
+            continue;
+         }
+         step("stat_probe_" + name, 5, m -> {
+            if (at[2] == 0) {
+               check("stat_" + name, false, "biome not found");
+               return true;
+            }
+            String[] line = new String[1];
+            onServer(m, () -> line[0] = spawnStats(serverOverworld(m), serverPlayer(m), 600));
+            Skywyrms.LOGGER.info("[autotest] STAT {} at {} {}: {}", name, at[0], at[1], line[0]);
+            REPORT.append("STAT ").append(name).append(" at ").append(at[0]).append(' ').append(at[1]).append(": ").append(line[0]).append('\n');
+            return true;
+         });
+      }
+      // the real thing: a player standing on a plain, the server tick hook does the spawning
+      int[] before = new int[1];
+      step("natural_go", 20, m -> {
+         command(m, "gamemode spectator @a");
+         command(m, String.format(Locale.ROOT, "tp @a %d 160 %d", plains[0], plains[1]));
+         return true;
+      });
+      step("natural_load", 10, m -> {
+         boolean[] loaded = new boolean[1];
+         onServer(m, () -> {
+            boolean all = true;
+            for (int i = 0; i < 16 && all; i++) {
+               double a = i * Math.PI / 8.0;
+               all = serverOverworld(m).hasChunkAt(new net.minecraft.core.BlockPos(plains[0] + (int)(Math.cos(a) * 106.0), 0, plains[1] + (int)(Math.sin(a) * 106.0)));
+            }
+            loaded[0] = all && serverOverworld(m).hasChunkAt(new net.minecraft.core.BlockPos(plains[0], 0, plains[1]));
+         });
+         return loaded[0] || stepTicks > 560;
+      });
+      step("natural_setup", 40, m -> {
+         onServer(m, () -> {
+            net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+            int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, plains[0], plains[1]);
+            serverCommand(m, "gamemode creative @a");
+            serverCommand(m, String.format(Locale.ROOT, "tp @a %d %d %d", plains[0], y + 1, plains[1]));
+            serverCommand(m, "kill @e[type=!minecraft:player]");
+         });
+         return true;
+      });
+      step("natural_start", 320, m -> {
+         onServer(m, () -> {
+            ModConfig config = ModConfig.get();
+            config.spawnIntervalTicks = 20;
+            config.spawnChance = 1.0F;
+            config.spawnSpacing = 0;
+            serverCommand(m, "gamerule doMobSpawning true");
+            serverCommand(m, "gamerule spawn_mobs true");
+            before[0] = serverOverworld(m).getEntitiesOfClass(DragonEntity.class, around(m, 140).inflate(0.0, 400.0, 0.0), d -> d.isAlive() && !d.isTame()).size();
+         });
+         return true;
+      });
+      step("natural_count", 5, m -> {
+         int[] now = new int[1];
+         StringBuilder kinds = new StringBuilder();
+         onServer(m, () -> {
+            for (DragonEntity d : serverOverworld(m).getEntitiesOfClass(DragonEntity.class, around(m, 140).inflate(0.0, 400.0, 0.0), w -> w.isAlive() && !w.isTame())) {
+               now[0]++;
+               kinds.append(' ').append(d.getKind()).append('@').append((int)Math.sqrt(d.distanceToSqr(serverPlayer(m))));
+            }
+            ModConfig config = ModConfig.get();
+            config.spawnIntervalTicks = 400;
+            config.spawnChance = 0.12F;
+            config.spawnSpacing = 96;
+            serverCommand(m, "gamerule doMobSpawning false");
+            serverCommand(m, "gamerule spawn_mobs false");
+         });
+         check("natural_spawn_by_server_tick", now[0] - before[0] >= 3, (now[0] - before[0]) + " wild dragons in 16 s with a spawn attempt every second:" + kinds);
+         return true;
+      });
+      shot("natural_spawn");
+   }
+
+   /** The same n spawn points for all three placements; a line of counts. */
+   private static String spawnStats(net.minecraft.server.level.ServerLevel level, ServerPlayer player, int n) {
+      net.minecraft.util.RandomSource random = net.minecraft.util.RandomSource.create(4711L);
+      int aroundY = net.minecraft.util.Mth.floor(player.getY());
+      int unloaded = 0;
+      int noBiome = 0;
+      int fit = 0;
+      int[] ok = new int[3];
+      int treetop126 = 0;
+      int[] lift = new int[4]; // current placement: on the ground at the middle column's height, 1-2 higher, 3+ higher, on the treetops
+      java.util.EnumMap<DragonKind, int[]> perKind = new java.util.EnumMap<>(DragonKind.class);
+      java.util.EnumMap<DragonKind, DragonEntity> probes = new java.util.EnumMap<>(DragonKind.class);
+      for (int i = 0; i < n; i++) {
+         double angle = random.nextDouble() * Math.PI * 2.0;
+         double distance = 40.0 + random.nextDouble() * 50.0;
+         int x0 = net.minecraft.util.Mth.floor(player.getX() + Math.cos(angle) * distance);
+         int z0 = net.minecraft.util.Mth.floor(player.getZ() + Math.sin(angle) * distance);
+         if (!level.hasChunkAt(new net.minecraft.core.BlockPos(x0, 0, z0))) {
+            unloaded++;
+            continue;
+         }
+         List<DragonKind> options = com.pokato.skywyrms.server.DragonSpawner.kindsFor(level.getBiome(com.pokato.skywyrms.server.DragonSpawner.biomePos(level, x0, z0, aroundY)));
+         if (options.isEmpty()) {
+            noBiome++;
+            continue;
+         }
+         DragonKind kind = options.get(random.nextInt(options.size()));
+         fit++;
+         DragonEntity dragon = probes.computeIfAbsent(kind, k -> com.pokato.skywyrms.server.DragonSpawner.newDragon(level, k));
+         int[] k = perKind.computeIfAbsent(kind, q -> new int[4]);
+         k[0]++;
+         long seed = random.nextLong();
+         if (spot125(level, dragon, kind, x0, z0, aroundY)) {
+            ok[0]++;
+            k[1]++;
+         }
+         int where126 = spot126(level, net.minecraft.util.RandomSource.create(seed), dragon, kind, x0, z0, aroundY);
+         if (where126 != 0) {
+            ok[1]++;
+            k[2]++;
+            if (where126 == 2) {
+               treetop126++;
+            }
+         }
+         if (com.pokato.skywyrms.server.DragonSpawner.findSpot(level, net.minecraft.util.RandomSource.create(seed), dragon, kind, x0, z0, aroundY)) {
+            ok[2]++;
+            k[3]++;
+            int bx = net.minecraft.util.Mth.floor(dragon.getX());
+            int bz = net.minecraft.util.Mth.floor(dragon.getZ());
+            int by = net.minecraft.util.Mth.floor(dragon.getY());
+            int reach = net.minecraft.util.Mth.ceil(dragon.getBbWidth() / 2.0F - 0.5F);
+            int ground = Integer.MIN_VALUE;
+            for (int dx = -reach; dx <= reach; dx++) {
+               for (int dz = -reach; dz <= reach; dz++) {
+                  ground = Math.max(ground, level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, bx + dx, bz + dz));
+               }
+            }
+            int up = by - level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, bx, bz);
+            lift[by > ground ? 3 : up <= 0 ? 0 : up <= 2 ? 1 : 2]++;
+         }
+      }
+      StringBuilder out = new StringBuilder();
+      out.append("points=").append(n).append(" unloaded=").append(unloaded).append(" no_dragon_biome=").append(noBiome).append(" fit=").append(fit);
+      out.append(" | spawned 1.2.5=").append(ok[0]).append(" 1.2.6=").append(ok[1]).append(" (treetop ").append(treetop126).append(") now=").append(ok[2]);
+      out.append(" | now: level=").append(lift[0]).append(" up1-2=").append(lift[1]).append(" up3+=").append(lift[2]).append(" treetop=").append(lift[3]).append(" |");
+      for (java.util.Map.Entry<DragonKind, int[]> e : perKind.entrySet()) {
+         int[] v = e.getValue();
+         out.append(' ').append(e.getKey()).append('=').append(v[0]).append(':').append(v[1]).append('/').append(v[2]).append('/').append(v[3]);
+      }
+      return out.toString();
+   }
+
+   /** where 1.2.5 put a wild dragon: the middle column's height, one try */
+   private static boolean spot125(net.minecraft.server.level.ServerLevel level, DragonEntity dragon, DragonKind kind, int x, int z, int aroundY) {
+      int y = level.dimensionType().hasCeiling()
+         ? com.pokato.skywyrms.server.DragonSpawner.findFloor(level, x, aroundY, z)
+         : level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+      if (!com.pokato.skywyrms.server.DragonSpawner.inHeightRange(level, y)) {
+         return false;
+      }
+      if (!level.getFluidState(new net.minecraft.core.BlockPos(x, y - 1, z)).isEmpty() && kind != DragonKind.TIDE) {
+         return false;
+      }
+      return com.pokato.skywyrms.server.DragonSpawner.fits(level, dragon, x, y, z);
+   }
+
+   /** where 1.2.6 put a wild dragon: the middle column's height or its treetop, six tries within 12 blocks; 0 = nowhere, 1 = ground, 2 = treetop */
+   private static int spot126(net.minecraft.server.level.ServerLevel level, net.minecraft.util.RandomSource random, DragonEntity dragon, DragonKind kind, int x0, int z0, int aroundY) {
+      boolean ceiling = level.dimensionType().hasCeiling();
+      for (int attempt = 0; attempt < 6; attempt++) {
+         int x = attempt == 0 ? x0 : x0 + random.nextInt(25) - 12;
+         int z = attempt == 0 ? z0 : z0 + random.nextInt(25) - 12;
+         if (!level.hasChunkAt(new net.minecraft.core.BlockPos(x, 0, z))) {
+            if (attempt == 0) {
+               return 0;
+            }
+            continue;
+         }
+         int ground = ceiling
+            ? com.pokato.skywyrms.server.DragonSpawner.findFloor(level, x, aroundY, z)
+            : level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+         if (!com.pokato.skywyrms.server.DragonSpawner.inHeightRange(level, ground)) {
+            if (attempt == 0) {
+               return 0;
+            }
+            continue;
+         }
+         int canopy = ceiling ? ground : level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z);
+         for (int y : canopy > ground ? new int[] {ground, canopy} : new int[] {ground}) {
+            if (!com.pokato.skywyrms.server.DragonSpawner.inHeightRange(level, y)) {
+               continue;
+            }
+            if (y == ground && !level.getFluidState(new net.minecraft.core.BlockPos(x, y - 1, z)).isEmpty() && kind != DragonKind.TIDE) {
+               continue;
+            }
+            if (com.pokato.skywyrms.server.DragonSpawner.fits(level, dragon, x, y, z)) {
+               return y == ground ? 1 : 2;
+            }
+         }
+      }
+      return 0;
    }
 
    /** Eggs shared between players: co-owner pickup, a placed egg belongs to whoever placed it, breeding two players' dragons. */
