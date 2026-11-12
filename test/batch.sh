@@ -15,7 +15,7 @@ for t in $1; do
   INST="at-$SCEN-$L-$V${X:+-x$n}"; D=$R/run/instances/$INST
   echo "=== $SCEN $L $V ${X:++ $(echo $X | tr '+' ' ')} $(date +%H:%M:%S)" >> $OUT
   RES=$(timeout 1500 python3 $R/run/launch.py client --loader "$L" --mc "$V" --mods "$MODS" --instance "$INST" --fresh \
-        "--jvm=-Dskywyrms.autotest=$SCEN" --wait-file autotest_done.txt --settle 2 --timeout 1300 2>/dev/null | tail -1)
+        "--jvm=-Dskywyrms.autotest=$SCEN$([ "$L:$V" = "forge:1.21.1" ] && echo ,-Dskywyrms.autotest.reload=1)" --wait-file autotest_done.txt --settle 2 --timeout 1300 2>/dev/null | tail -1)
   echo "  $(echo "$RES" | grep -o '"exit_reason": "[^"]*"\|"crash_report": "[^"]*"' | tr '\n' ' ')" >> $OUT
   if [ -f $D/autotest_done.txt ]; then
     echo "  result: $(head -1 $D/autotest_done.txt)  passed: $(grep -c ': true' $D/autotest_done.txt)  failed: $(grep -E '^[a-z_]+: false' $D/autotest_done.txt | cut -d' ' -f1 | tr '\n' ' ')" >> $OUT

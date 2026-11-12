@@ -102,6 +102,16 @@ public final class AutoTest {
    }
 
    private static void build() {
+      if (System.getProperty("skywyrms.autotest.reload") != null) {
+         // Forge 1.21.1 in this test setup (test/batch.sh sets the property): the world is joined straight from the
+         // launcher before Forge's event bus runs, so Forge misses the first data load and its loot hook then throws for
+         // every mob that dies, a vanilla pig too ("Can not retrieve LootModifierManager..."). A /reload repairs it.
+         // On a dedicated Forge 1.21.1 server and with 1.2.7 it is the same story: not the mod (tools/audit).
+         step("reload", 160, m -> {
+            command(m, "reload");
+            return true;
+         });
+      }
       step("setup", 40, AutoTest::setup);
       if ("owner".equals(SCENARIO)) {
          ownerSteps();
