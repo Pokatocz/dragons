@@ -202,7 +202,10 @@ def client(a):
     jvm = ["-Xmx2200m", "-Djava.awt.headless=true"] + (a.jvm.split() if a.jvm else [])
     cmd = ["portablemc", "--main-dir", MCROOT, "start", spec, "--mc-dir", inst, "-u", "Tester", "--jvm", java_for(a.mc),
            "--fetch-exclude-all", "--resolution", "1280x720", "--jvm-arg=" + ",".join(jvm)]
-    if a.world != "none":
+    if a.join:
+        host, _, port = a.join.partition(":")
+        cmd += ["--join-server", host] + (["--join-server-port", port] if port else [])
+    elif a.world != "none":
         cmd += ["--join-world", "world"]
     open(os.path.join(inst, "launch-command.txt"), "w").write(" ".join(cmd) + "\n")
     logf = open(os.path.join(inst, "client.log"), "w")
@@ -272,6 +275,7 @@ def main():
     c.add_argument("--instance", required=True)
     c.add_argument("--mods", default="")
     c.add_argument("--world", default="flat", choices=["flat", "normal", "none"])
+    c.add_argument("--join", help="host[:port] of a dedicated server to join instead of a singleplayer world")
     c.add_argument("--jvm", default="")
     c.add_argument("--timeout", type=float, default=900)
     c.add_argument("--wait-file")

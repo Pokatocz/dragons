@@ -23,7 +23,6 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
-import net.minecraft.world.entity.AreaEffectCloud;
 //#if MC >= 12102
 import net.minecraft.world.entity.EntitySpawnReason;
 //#endif
@@ -637,21 +636,51 @@ public final class DragonAbilities {
          infuse(dragon, level, target);
       }
 
-      AreaEffectCloud cloud = new AreaEffectCloud(level, impact.x, impact.y, impact.z);
-      cloud.setOwner(dragon.abilityUser());
-      cloud.setRadius(4.7F);
-      cloud.setRadiusOnUse(-0.25F);
-      cloud.setWaitTime(8);
-      cloud.setDuration(140);
-      cloud.setRadiusPerTick(-0.016785713F);
-      cloud.addEffect(new MobEffectInstance(MobEffects.POISON, 120, 1));
-      //#if MC >= 12105
-      cloud.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, 100, 0));
-      //#else
-      cloud.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 0));
-      //#endif
-      level.addFreshEntity(cloud);
+      // 1.2.8: the lingering venom is the dragon's own pool (tickVenomPools) and no vanilla effect cloud any more: that
+      // one also poisoned the dragon's owner and the owner's animals and slowed the dragon itself
+      dragon.addVenomPool(impact);
       return true;
+   }
+
+   /**
+    * The venom left by Venom Spit: for 7 seconds, shrinking from 4.7 to 2.4 blocks, it poisons and slows whatever the
+    * dragon's abilities may hit - so not its owner, its owner's animals, the dragon itself or (without PvP) other players.
+    * A pool is {x, y, z, age in ticks}.
+    */
+   public static void tickVenomPools(DragonEntity dragon, ServerLevel level, List<double[]> pools) {
+      for (java.util.Iterator<double[]> it = pools.iterator(); it.hasNext(); ) {
+         double[] pool = it.next();
+         int age = (int)pool[3];
+         pool[3] = age + 1;
+         if (age >= 148) {
+            it.remove();
+            continue;
+         }
+
+         double radius = 4.7 - Math.max(0, age - 8) * 0.016785713;
+         if (age % 4 == 0) {
+            int count = (int)(radius * radius * 1.2);
+            level.sendParticles(ModParticles.venom(), pool[0], pool[1] + 0.25, pool[2], count, radius * 0.5, 0.2, radius * 0.5, 0.01);
+            level.sendParticles(ParticleTypes.SNEEZE, pool[0], pool[1] + 0.2, pool[2], Math.max(1, count / 3), radius * 0.5, 0.15, radius * 0.5, 0.005);
+         }
+
+         if (age % 20 == 8) {
+            AABB box = new AABB(pool[0] - radius, pool[1] - 0.5, pool[2] - radius, pool[0] + radius, pool[1] + 1.0, pool[2] + radius);
+
+            for (LivingEntity target : level.getEntitiesOfClass(LivingEntity.class, box, dragon::canAbilityHit)) {
+               double dx = target.getX() - pool[0];
+               double dz = target.getZ() - pool[2];
+               if (dx * dx + dz * dz <= radius * radius && target.isAffectedByPotions()) {
+                  target.addEffect(new MobEffectInstance(MobEffects.POISON, 120, 1), dragon);
+                  //#if MC >= 12105
+                  target.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, 100, 0), dragon);
+                  //#else
+                  target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 0), dragon);
+                  //#endif
+               }
+            }
+         }
+      }
    }
 
    private static boolean blink(DragonEntity dragon, ServerLevel level) {

@@ -153,6 +153,7 @@ public class DragonEntity extends TamableAnimal {
    private boolean aiFlying;
    private int airTicks;
    private int flyTicks;
+   private final java.util.List<double[]> venomPools = new java.util.ArrayList<>();
    private int takeoffTimer;
    private double takeoffImpulse;
    private float diveBoost = 1.0F;
@@ -539,11 +540,11 @@ public class DragonEntity extends TamableAnimal {
    }
 
    /**
-    * While the dragon is in the air the rider's sneak key means "fly down" and not "dismount" (unless the config says
-    * sneakDismountsInAir). On the ground and in water sneaking dismounts as always.
+    * With the config option sneakFliesDown: while the dragon is in the air the rider's sneak key means "fly down" and
+    * not "dismount". On the ground and in water sneaking dismounts as always.
     */
    public boolean sneakFliesDown() {
-      return this.isFlying() && !this.onGround() && !this.isInWater() && !ModConfig.get().sneakDismountsInAir;
+      return ModConfig.get().sneakFliesDown && this.isFlying() && !this.onGround() && !this.isInWater();
    }
 
    public void setFlying(boolean flying) {
@@ -777,9 +778,13 @@ public class DragonEntity extends TamableAnimal {
          this.abilityCooldown--;
       }
 
+      if (!this.venomPools.isEmpty()) {
+         DragonAbilities.tickVenomPools(this, level, this.venomPools);
+      }
+
       LivingEntity rider = this.getControllingPassenger();
       if (this.sneakFliesDown()) {
-         // 1.2.8: high in the air the sneak key no longer throws the rider off. A passenger's rideTick() runs right after
+         // 1.2.8, config sneakFliesDown: high in the air the sneak key does not throw the rider off. A passenger's rideTick() runs right after
          // this tick and dismounts when the player's sneak flag is set, so the flag is taken back here; the rider's own
          // client flies the dragon down instead (ClientHooks).
          for (Entity passenger : this.getPassengers()) {
@@ -949,6 +954,11 @@ public class DragonEntity extends TamableAnimal {
       this.entityData.set(DATA_ENERGY, Math.round(this.energy));
    }
 
+   /** Venom Spit leaves a pool of venom there for a few seconds (DragonAbilities.tickVenomPools). */
+   public void addVenomPool(Vec3 at) {
+      this.venomPools.add(new double[]{at.x, at.y, at.z, 0.0});
+   }
+
    public boolean abilityReady() {
       return this.abilityCooldown <= 0 && !this.isBreathing();
    }
@@ -978,7 +988,8 @@ public class DragonEntity extends TamableAnimal {
                return false;
             }
 
-            if (target instanceof TamableAnimal pet && pet.getOwner() == owner) {
+            // 1.2.8: every animal of the owner, also a horse (OwnableEntity), not only wolves, cats and dragons
+            if (target instanceof net.minecraft.world.entity.OwnableEntity pet && pet.getOwner() == owner) {
                return false;
             }
 
@@ -1103,13 +1114,27 @@ public class DragonEntity extends TamableAnimal {
    }
 
    public boolean wantsToAttack(LivingEntity target, LivingEntity owner) {
-      if (target instanceof TamableAnimal pet && pet.getOwner() == owner) {
+      if (target instanceof net.minecraft.world.entity.OwnableEntity pet && pet.getOwner() == owner) {
          return false;
       } else {
          return target instanceof Player other && owner instanceof Player ownerPlayer && !ownerPlayer.canHarmPlayer(other)
             ? false
             : !(target instanceof ArmorStand);
       }
+   }
+
+   /** 1.2.8: a saddled dragon that dies drops its saddle (it was lost before). */
+   public void die(DamageSource source) {
+      if (this.isSaddled() && this.level() instanceof ServerLevel level) {
+         this.setSaddled(false);
+         //#if MC >= 12102
+         this.spawnAtLocation(level, new ItemStack(Items.SADDLE));
+         //#else
+         this.spawnAtLocation(new ItemStack(Items.SADDLE));
+         //#endif
+      }
+
+      super.die(source);
    }
 
    //#if MC >= 12102

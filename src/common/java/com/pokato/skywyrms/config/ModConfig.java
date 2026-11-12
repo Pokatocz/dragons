@@ -50,8 +50,9 @@ public final class ModConfig {
    public String riderSeeThrough = "off";
    public float wingSoundVolume = 1.0F;
    public float wingSoundPitch = 1.0F;
-   // 1.2.8: false = while the dragon is in the air the sneak key flies down and only dismounts on the ground or in water
-   public boolean sneakDismountsInAir = false;
+   // 1.2.8: true = while the dragon is in the air the sneak key flies down and only dismounts on the ground or in water.
+   // The default stays as it always was: the sneak key dismounts, also in the air.
+   public boolean sneakFliesDown = false;
    private static ModConfig instance;
 
    public static final String[] ABILITY_IDS = {"fire_breath", "frost_breath", "lightning", "venom_spit", "void_blink", "tidal_jet"};
@@ -180,7 +181,7 @@ public final class ModConfig {
       }
       c.wingSoundVolume = number(json, "wingSoundVolume", 1.0F, 0.0F, 4.0F);
       c.wingSoundPitch = number(json, "wingSoundPitch", 1.0F, 0.25F, 2.0F);
-      c.sneakDismountsInAir = bool(json, "sneakDismountsInAir", false);
+      c.sneakFliesDown = bool(json, "sneakFliesDown", false);
       return c;
    }
 
@@ -213,7 +214,7 @@ public final class ModConfig {
       out.addProperty("riderSeeThrough", this.riderSeeThrough);
       out.addProperty("wingSoundVolume", this.wingSoundVolume);
       out.addProperty("wingSoundPitch", this.wingSoundPitch);
-      out.addProperty("sneakDismountsInAir", this.sneakDismountsInAir);
+      out.addProperty("sneakFliesDown", this.sneakFliesDown);
       JsonObject h = new JsonObject();
       help(h, "items", "Item lists take item ids (\"minecraft:diamond\" or just \"diamond\") and tags (\"#minecraft:meat\"). An empty list [] keeps the default.");
       help(h, "tameItems", "Items that tame a wild adult dragon, e.g. [\"diamond\", \"emerald\", \"gold_ingot\"]. Default: meat (Tide Wyrm also fish).");
@@ -224,7 +225,7 @@ public final class ModConfig {
       help(h, "abilities", "false switches an ability off for every dragon (riders and wild dragons, and a hybrid's blood effect).");
       help(h, "riderSeeThrough", "\"off\", \"first_person\" or \"always\": the dragon you ride is drawn see-through (only for you) so it does not block the view.");
       help(h, "wingSound", "wingSoundVolume and wingSoundPitch: 1.0 = normal; a lower pitch sounds heavier.");
-      help(h, "sneakDismountsInAir", "false: in the air the sneak key (Left Shift) flies down and you only dismount on the ground or in water. true: the sneak key always dismounts, also high in the air (as before 1.2.8).");
+      help(h, "sneakFliesDown", "false (default): the sneak key (Left Shift) dismounts, also in the air. true: in the air the sneak key flies down and you only dismount on the ground or in water. In multiplayer set it on the server and in your own game.");
       help(h, "restart", "Changes take effect after restarting the game / server.");
       out.add("_help", h);
       return out;

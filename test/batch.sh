@@ -22,7 +22,7 @@ for t in $1; do
   fi
   grep -a -E "Exception|Caused by|FATAL" $D/client.log 2>/dev/null | grep -a -v -i "401\|realms\|authlib\|yggdrasil\|profile\|telemetry\|OpenAL\|SocketTimeout\|narrator\|UnknownHost" | head -3 | cut -c1-200 | sed 's/^/  ! /' >> $OUT
   mkdir -p $R/test/results/$INST
-  cp -r $D/screenshots $D/autotest_done.txt $D/client.log $R/test/results/$INST/ 2>/dev/null
+  cp -r $D/screenshots $D/autotest_done.txt $D/client.log $D/logs/latest.log $R/test/results/$INST/ 2>/dev/null
   [ -d $D/crash-reports ] && cp -r $D/crash-reports $R/test/results/$INST/
   rm -rf "$D"
 done

@@ -30,7 +30,7 @@ public final class ClientHooks {
          ridingTicks = 0;
       } else {
          DragonEntity dragon = player.getVehicle() instanceof DragonEntity d && d.getControllingPassenger() == player ? d : null;
-         // 1.2.8: in the air the sneak key flies down too (the server keeps the rider on, see DragonEntity.serverTick)
+         // 1.2.8, config sneakFliesDown: in the air the sneak key flies down too (the server keeps the rider on, see DragonEntity.serverTick)
          DragonEntity.descendKeyDown = dragon != null && (ModKeys.DESCEND.isDown() || minecraft.options.keyShift.isDown() && dragon.sneakFliesDown());
          DragonEntity.sprintKeyDown = dragon != null && minecraft.options.keySprint.isDown();
          DragonEntity.ascendKeyDown = dragon != null && minecraft.options.keyJump.isDown();
@@ -71,7 +71,7 @@ public final class ClientHooks {
 
    private static Component controlsHint(Minecraft minecraft, DragonEntity dragon) {
       return Component.translatable(
-         ModConfig.get().sneakDismountsInAir ? "message.skywyrms.controls" : "message.skywyrms.controls_safe",
+         ModConfig.get().sneakFliesDown ? "message.skywyrms.controls_safe" : "message.skywyrms.controls",
          new Object[]{
             minecraft.options.keyJump.getTranslatedKeyMessage(),
             ModKeys.DESCEND.getTranslatedKeyMessage(),

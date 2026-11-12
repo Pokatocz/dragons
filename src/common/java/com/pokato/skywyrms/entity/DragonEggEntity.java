@@ -334,7 +334,10 @@ public class DragonEggEntity extends Mob {
          //#endif
          baby.setGenes(g, true);
          baby.makeHatchling(ModConfig.get().babyGrowTicks());
-         baby.tameTo(this.owner);
+         if (this.owner != null) {
+            baby.tameTo(this.owner); // 1.2.8: an egg nobody owns hatches a wild hatchling, not a "tamed" one nobody can use
+         }
+
          baby.setPersistenceRequired();
          level.addFreshEntity(baby);
          double h = this.getBbHeight() * 0.5;

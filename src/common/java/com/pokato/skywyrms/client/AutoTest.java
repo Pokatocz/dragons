@@ -116,6 +116,10 @@ public final class AutoTest {
          eggShareSteps();
          return;
       }
+      if ("audit".equals(SCENARIO)) {
+         auditSteps();
+         return;
+      }
       if ("sneak".equals(SCENARIO)) {
          sneakSteps();
          return;
@@ -655,14 +659,262 @@ public final class AutoTest {
       });
    }
 
+   // ---------------------------------------------------------------- 1.2.8: checks from the bug hunt
+   private static String dragonState(DragonEntity d) {
+      return "tame=" + d.isTame() + " owner=" + DragonEntity.ownerUuid(d) + " saddled=" + d.isSaddled() + " stay=" + d.isOrderedToSit() + " body=" + d.getKind()
+         + " blood=" + d.blood() + " baby=" + d.isBaby() + " maxHealth=" + Math.round(d.getMaxHealth()) + " health=" + Math.round(d.getHealth())
+         + " name=" + (d.hasCustomName() ? d.getCustomName().getString() : "-");
+   }
+
+   private static String eggState(com.pokato.skywyrms.entity.DragonEggEntity e) {
+      return "owner=" + e.owner() + " coOwner=" + e.coOwner() + " body=" + e.body() + " blood=" + e.blood();
+   }
+
+   /**
+    * "audit": a dragon, a hatchling and an egg must come back unchanged after their chunk was unloaded and loaded again;
+    * a tamed dragon's venom cloud must not poison its owner or slow the dragon; an egg nobody owns must not hatch into
+    * a "tamed" dragon without an owner; a saddled dragon that dies must drop its saddle.
+    */
+   private static void auditSteps() {
+      java.util.UUID[] ids = new java.util.UUID[3];
+      String[] before = new String[3];
+      int[] eggProgress = new int[2];
+      int[] growth = new int[2];
+      java.util.UUID stranger = java.util.UUID.fromString("11111111-2222-3333-4444-555555555555");
+      // far from the world spawn: the chunks around it never unload
+      step("persist_go", 60, m -> {
+         command(m, "tp @a 1000 -60 1000 0 10");
+         return true;
+      });
+      step("persist_setup", 40, m -> {
+         command(m, "summon skywyrms:ember_wyrm 1000 -60 1008");
+         command(m, "summon skywyrms:tide_wyrm 1006 -60 1008");
+         return true;
+      });
+      step("persist_prepare", 20, m -> {
+         onServer(m, () -> {
+            net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+            ServerPlayer player = serverPlayer(m);
+            for (DragonEntity d : dragons(m)) {
+               if (d.getKind() == DragonKind.EMBER) {
+                  d.setGenes(com.pokato.skywyrms.entity.DragonGenes.wild(DragonKind.EMBER, DragonKind.FROST, d.getRandom()), true);
+                  d.tameTo(player.getUUID());
+                  d.setSaddled(true);
+                  d.setOrderedToSit(true);
+                  d.setHealth(d.getMaxHealth() * 0.5F);
+                  d.setCustomName(net.minecraft.network.chat.Component.literal("Smaug"));
+                  ids[0] = d.getUUID();
+                  before[0] = dragonState(d);
+               } else if (d.getKind() == DragonKind.TIDE) {
+                  d.tameTo(player.getUUID());
+                  d.makeHatchling(24000);
+                  d.setOrderedToSit(true);
+                  ids[1] = d.getUUID();
+                  before[1] = dragonState(d);
+                  growth[0] = Math.round(d.growth() * 100.0F);
+               }
+            }
+            com.pokato.skywyrms.entity.DragonEggEntity egg = com.pokato.skywyrms.entity.DragonEggEntity.create(
+               level, com.pokato.skywyrms.entity.DragonGenes.wild(DragonKind.STORM, DragonKind.VOID, level.getRandom()), player.getUUID(), 1234);
+            if (egg != null) {
+               egg.setCoOwner(stranger);
+               egg.placeNear(level, new net.minecraft.world.phys.Vec3(994.0, -60.0, 1008.0));
+               level.addFreshEntity(egg);
+               ids[2] = egg.getUUID();
+               before[2] = eggState(egg);
+               eggProgress[0] = egg.progressTicks();
+            }
+         });
+         return true;
+      });
+      shot("persist_before");
+      step("persist_leave", 20, m -> {
+         command(m, "tp @a 3000 -60 3000");
+         return true;
+      });
+      boolean[] unloaded = new boolean[1];
+      step("persist_unloaded", 20, m -> {
+         boolean[] gone = new boolean[1];
+         onServer(m, () -> {
+            net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+            gone[0] = ids[0] != null && ids[1] != null && ids[2] != null && level.getEntity(ids[0]) == null && level.getEntity(ids[1]) == null && level.getEntity(ids[2]) == null;
+         });
+         if (gone[0] || stepTicks > 580) {
+            unloaded[0] = gone[0];
+            return true;
+         }
+         return false;
+      });
+      step("persist_back", 20, m -> {
+         command(m, "tp @a 1000 -60 1000 0 10");
+         return true;
+      });
+      step("persist_check", 20, m -> {
+         String[] after = new String[3];
+         onServer(m, () -> {
+            net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+            if (ids[0] != null && level.getEntity(ids[0]) instanceof DragonEntity d) {
+               after[0] = dragonState(d);
+            }
+            if (ids[1] != null && level.getEntity(ids[1]) instanceof DragonEntity d) {
+               after[1] = dragonState(d);
+               growth[1] = Math.round(d.growth() * 100.0F);
+            }
+            if (ids[2] != null && level.getEntity(ids[2]) instanceof com.pokato.skywyrms.entity.DragonEggEntity e) {
+               after[2] = eggState(e);
+               eggProgress[1] = e.progressTicks();
+            }
+         });
+         if (after[0] == null || after[1] == null || after[2] == null) {
+            if (stepTicks < 400) {
+               return false;
+            }
+         }
+         check("persist_chunk_was_unloaded", unloaded[0], "");
+         check("persist_dragon", before[0] != null && before[0].equals(after[0]), "before: " + before[0] + " | after: " + after[0]);
+         check("persist_hatchling", before[1] != null && before[1].equals(after[1]) && Math.abs(growth[1] - growth[0]) <= 3,
+            "before: " + before[1] + " growth " + growth[0] + "% | after: " + after[1] + " growth " + growth[1] + "%");
+         check("persist_egg", before[2] != null && before[2].equals(after[2]) && eggProgress[1] >= eggProgress[0] && eggProgress[1] < eggProgress[0] + 3000,
+            "before: " + before[2] + " progress " + eggProgress[0] + " | after: " + after[2] + " progress " + eggProgress[1]);
+         return true;
+      });
+      shot("persist_after");
+      // ---- a tamed dragon's venom cloud next to its owner
+      step("venom_setup", 40, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "tp @a 0 -60 0 0 0");
+         command(m, "summon skywyrms:thorn_wyrm 0 -60 7 {NoAI:1b,Rotation:[180f,0f]}");
+         command(m, "summon minecraft:pig 0 -60 3 {NoAI:1b}");
+         command(m, "summon minecraft:horse 2 -60 3 {NoAI:1b}");
+         command(m, "effect clear @a");
+         return true;
+      });
+      boolean[] cast = new boolean[1];
+      step("venom_cast", 50, m -> {
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            for (DragonEntity d : dragons(m)) {
+               if (d.getKind() == DragonKind.THORN) {
+                  d.tameTo(player.getUUID());
+                  for (net.minecraft.world.entity.animal.Animal animal : serverOverworld(m).getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, around(m, 16), a -> !(a instanceof DragonEntity))) {
+                     if (animal instanceof net.minecraft.world.entity.OwnableEntity) {
+                        ((net.minecraft.world.entity.animal.horse.AbstractHorse)animal).tameWithName(player);
+                     } else {
+                        d.setTarget(animal);
+                     }
+                  }
+                  cast[0] = d.getTarget() != null && d.castAbility();
+               }
+            }
+         });
+         return true;
+      });
+      shot("venom_cloud");
+      step("venom_check", 5, m -> {
+         String[] r = new String[1];
+         boolean[] ok = new boolean[1];
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            boolean ownerPoisoned = player.hasEffect(net.minecraft.world.effect.MobEffects.POISON);
+            int dragonEffects = -1;
+            boolean targetPoisoned = false;
+            boolean horsePoisoned = false;
+            boolean horseOwned = false;
+            for (DragonEntity d : dragons(m)) {
+               if (d.getKind() == DragonKind.THORN) {
+                  dragonEffects = d.getActiveEffects().size();
+               }
+            }
+            for (net.minecraft.world.entity.animal.Animal animal : serverOverworld(m).getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, around(m, 16), a -> !(a instanceof DragonEntity))) {
+               if (animal instanceof net.minecraft.world.entity.OwnableEntity owned) {
+                  horsePoisoned = animal.hasEffect(net.minecraft.world.effect.MobEffects.POISON);
+                  horseOwned = owned.getOwner() == player;
+               } else {
+                  targetPoisoned = animal.hasEffect(net.minecraft.world.effect.MobEffects.POISON);
+               }
+            }
+            r[0] = "cast=" + cast[0] + " target poisoned=" + targetPoisoned + " owner poisoned=" + ownerPoisoned + " owner's horse poisoned=" + horsePoisoned
+               + " (horse is the owner's=" + horseOwned + ") effects on the dragon=" + dragonEffects;
+            ok[0] = cast[0] && targetPoisoned && !ownerPoisoned && horseOwned && !horsePoisoned && dragonEffects == 0;
+         });
+         check("venom_spares_owner_owners_horse_and_dragon", ok[0], r[0]);
+         return true;
+      });
+      // ---- an egg nobody owns
+      step("ownerless_egg", 40, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "effect clear @a");
+         command(m, "summon skywyrms:dragon_egg 4 -60 6");
+         return true;
+      });
+      step("ownerless_egg_hatch", 40, m -> {
+         onServer(m, () -> {
+            for (com.pokato.skywyrms.entity.DragonEggEntity e : serverOverworld(m).getEntitiesOfClass(com.pokato.skywyrms.entity.DragonEggEntity.class, around(m, 32))) {
+               e.setProgressTicks(ModConfig.get().eggHatchTicks() - 5);
+            }
+         });
+         return true;
+      });
+      step("ownerless_egg_check", 5, m -> {
+         String[] r = {"no hatchling"};
+         boolean[] ok = new boolean[1];
+         onServer(m, () -> {
+            for (DragonEntity d : dragons(m)) {
+               r[0] = "hatchling baby=" + d.isBaby() + " tame=" + d.isTame() + " owner=" + DragonEntity.ownerUuid(d);
+               ok[0] = d.isBaby() && !(d.isTame() && DragonEntity.ownerUuid(d) == null);
+            }
+         });
+         check("ownerless_egg_hatchling_is_not_tame_without_owner", ok[0], r[0]);
+         return true;
+      });
+      // ---- the saddle of a dragon that dies
+      step("saddle_setup", 40, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "summon skywyrms:storm_wyrm 0 -60 8 {NoAI:1b}");
+         return true;
+      });
+      step("saddle_kill", 30, m -> {
+         onServer(m, () -> {
+            for (DragonEntity d : dragons(m)) {
+               d.tameTo(serverPlayer(m).getUUID());
+               d.setSaddled(true);
+            }
+            serverCommand(m, "kill @e[type=minecraft:item]");
+            serverCommand(m, "kill @e[type=skywyrms:storm_wyrm]");
+         });
+         return true;
+      });
+      step("saddle_check", 5, m -> {
+         int[] saddles = new int[1];
+         int[] items = new int[1];
+         onServer(m, () -> {
+            for (net.minecraft.world.entity.item.ItemEntity item : serverOverworld(m).getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, around(m, 32))) {
+               items[0]++;
+               if (item.getItem().is(Items.SADDLE)) {
+                  saddles[0] += item.getItem().getCount();
+               }
+            }
+         });
+         check("dead_dragon_drops_its_saddle", saddles[0] == 1, "saddles on the ground=" + saddles[0] + " (item stacks=" + items[0] + ")");
+         return true;
+      });
+   }
+
    // ---------------------------------------------------------------- 1.2.8: the sneak key while riding
    /**
-    * The real keys, as a player presses them: in the air the sneak key must fly the dragon down and keep the rider on,
-    * on the ground it must dismount, and with the config option sneakDismountsInAir it must dismount in the air again.
+    * The real keys, as a player presses them. With the config option sneakFliesDown the sneak key must fly the dragon
+    * down in the air and keep the rider on, and dismount on the ground. Without it (the default) it must dismount in the
+    * air, as it always did.
     */
    private static void sneakSteps() {
       double[] startY = new double[1];
       boolean[] offAtTouchdown = new boolean[1];
+      step("sneak_option_on", 5, m -> {
+         ModConfig fresh = ModConfig.fromJson(new com.google.gson.JsonObject());
+         check("config_sneak_flies_down_is_off_by_default", !fresh.sneakFliesDown && !ModConfig.get().sneakFliesDown && fresh.toJson().has("sneakFliesDown"), "");
+         ModConfig.get().sneakFliesDown = true;
+         return true;
+      });
       step("summon", 60, AutoTest::summonAll);
       step("mount", 1, AutoTest::mount);
       step("wait_ride", 10, m -> m.player.getVehicle() instanceof DragonEntity || stepTicks > 60);
@@ -694,7 +946,7 @@ public final class AutoTest {
             r[0] = String.format(Locale.ROOT, "riding=%s after 2 s of sneak, started %.1f blocks up, flew down %.1f, on ground=%s", riding, startY[0] - (-60.0), dropped, d.onGround());
             ok[0] = riding && startY[0] > -52.0 && dropped > 2.0;
          });
-         check("sneak_in_air_flies_down_and_keeps_rider", ok[0], r[0]);
+         check("option_on_sneak_in_air_flies_down_and_keeps_rider", ok[0], r[0]);
          return true;
       });
       shot("sneak_down");
@@ -730,13 +982,13 @@ public final class AutoTest {
             st[0] = d != null && serverPlayer(m).getVehicle() == d;
             st[1] = d != null && d.onGround();
          });
-         check("sneak_on_ground_dismounts", !st[0] && st[1], "riding=" + st[0] + " dragon on ground=" + st[1] + " (already off while the key was still held at touchdown=" + offAtTouchdown[0] + ")");
+         check("option_on_sneak_on_ground_dismounts", !st[0] && st[1], "riding=" + st[0] + " dragon on ground=" + st[1] + " (already off while the key was still held at touchdown=" + offAtTouchdown[0] + ")");
          return true;
       });
-      // the old way back with the config option
+      // the default: as it always was
       step("classic_mount", 20, m -> {
          onServer(m, () -> {
-            ModConfig.get().sneakDismountsInAir = true;
+            ModConfig.get().sneakFliesDown = false;
             serverPlayer(m).setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             if (ember(m) != null) {
                ember(m).mobInteract(serverPlayer(m), InteractionHand.MAIN_HAND);
@@ -759,9 +1011,8 @@ public final class AutoTest {
          boolean[] riding = new boolean[1];
          onServer(m, () -> {
             riding[0] = ember(m) != null && serverPlayer(m).getVehicle() == ember(m);
-            ModConfig.get().sneakDismountsInAir = false;
          });
-         check("config_sneak_dismounts_in_air", !riding[0] && startY[0] > -52.0, String.format(Locale.ROOT, "riding=%s, was %.1f blocks up", riding[0], startY[0] - (-60.0)));
+         check("default_sneak_in_air_dismounts", !riding[0] && startY[0] > -52.0, String.format(Locale.ROOT, "riding=%s, was %.1f blocks up", riding[0], startY[0] - (-60.0)));
          return true;
       });
    }
