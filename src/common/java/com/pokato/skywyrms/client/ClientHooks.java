@@ -1,5 +1,6 @@
 package com.pokato.skywyrms.client;
 
+import com.pokato.skywyrms.config.ModConfig;
 import com.pokato.skywyrms.entity.DragonEntity;
 import com.pokato.skywyrms.net.AbilityPayload;
 import com.pokato.skywyrms.platform.Platform;
@@ -29,7 +30,8 @@ public final class ClientHooks {
          ridingTicks = 0;
       } else {
          DragonEntity dragon = player.getVehicle() instanceof DragonEntity d && d.getControllingPassenger() == player ? d : null;
-         DragonEntity.descendKeyDown = dragon != null && ModKeys.DESCEND.isDown();
+         // 1.2.8: in the air the sneak key flies down too (the server keeps the rider on, see DragonEntity.serverTick)
+         DragonEntity.descendKeyDown = dragon != null && (ModKeys.DESCEND.isDown() || minecraft.options.keyShift.isDown() && dragon.sneakFliesDown());
          DragonEntity.sprintKeyDown = dragon != null && minecraft.options.keySprint.isDown();
          DragonEntity.ascendKeyDown = dragon != null && minecraft.options.keyJump.isDown();
          //#if MC < 12102
@@ -69,7 +71,7 @@ public final class ClientHooks {
 
    private static Component controlsHint(Minecraft minecraft, DragonEntity dragon) {
       return Component.translatable(
-         "message.skywyrms.controls",
+         ModConfig.get().sneakDismountsInAir ? "message.skywyrms.controls" : "message.skywyrms.controls_safe",
          new Object[]{
             minecraft.options.keyJump.getTranslatedKeyMessage(),
             ModKeys.DESCEND.getTranslatedKeyMessage(),

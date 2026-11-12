@@ -116,6 +116,10 @@ public final class AutoTest {
          eggShareSteps();
          return;
       }
+      if ("sneak".equals(SCENARIO)) {
+         sneakSteps();
+         return;
+      }
       if ("spawnstat".equals(SCENARIO) || "spawnnatural".equals(SCENARIO)) {
          spawnStatSteps("spawnstat".equals(SCENARIO));
          return;
@@ -647,6 +651,117 @@ public final class AutoTest {
             }
          }
          command(m, "tp @a 0 -60 0 0 10");
+         return true;
+      });
+   }
+
+   // ---------------------------------------------------------------- 1.2.8: the sneak key while riding
+   /**
+    * The real keys, as a player presses them: in the air the sneak key must fly the dragon down and keep the rider on,
+    * on the ground it must dismount, and with the config option sneakDismountsInAir it must dismount in the air again.
+    */
+   private static void sneakSteps() {
+      double[] startY = new double[1];
+      boolean[] offAtTouchdown = new boolean[1];
+      step("summon", 60, AutoTest::summonAll);
+      step("mount", 1, AutoTest::mount);
+      step("wait_ride", 10, m -> m.player.getVehicle() instanceof DragonEntity || stepTicks > 60);
+      step("takeoff", 90, m -> {
+         m.options.keyJump.setDown(true);
+         m.player.setXRot(0.0F);
+         return true;
+      });
+      step("hover", 15, m -> {
+         m.options.keyJump.setDown(false);
+         return true;
+      });
+      step("sneak_press", 40, m -> {
+         onServer(m, () -> startY[0] = ember(m) == null ? Double.NaN : ember(m).getY());
+         m.options.keyShift.setDown(true);
+         return true;
+      });
+      step("sneak_in_air", 1, m -> {
+         String[] r = new String[1];
+         boolean[] ok = new boolean[1];
+         onServer(m, () -> {
+            DragonEntity d = ember(m);
+            if (d == null) {
+               r[0] = "no ember";
+               return;
+            }
+            boolean riding = serverPlayer(m).getVehicle() == d;
+            double dropped = startY[0] - d.getY();
+            r[0] = String.format(Locale.ROOT, "riding=%s after 2 s of sneak, started %.1f blocks up, flew down %.1f, on ground=%s", riding, startY[0] - (-60.0), dropped, d.onGround());
+            ok[0] = riding && startY[0] > -52.0 && dropped > 2.0;
+         });
+         check("sneak_in_air_flies_down_and_keeps_rider", ok[0], r[0]);
+         return true;
+      });
+      shot("sneak_down");
+      step("sneak_landing", 12, m -> {
+         boolean[] st = new boolean[2];
+         onServer(m, () -> {
+            DragonEntity d = ember(m);
+            st[0] = d == null || d.onGround();
+            st[1] = d != null && serverPlayer(m).getVehicle() == d;
+         });
+         if (st[0] || !st[1] || stepTicks > 400) {
+            offAtTouchdown[0] = !st[1];
+            return true;
+         }
+         return false;
+      });
+      step("sneak_seen_on_ground", 10, m -> {
+         boolean[] riding = new boolean[1];
+         onServer(m, () -> riding[0] = ember(m) != null && serverPlayer(m).getVehicle() == ember(m));
+         offAtTouchdown[0] = !riding[0];
+         m.options.keyShift.setDown(false);
+         return true;
+      });
+      step("sneak_again_on_ground", 15, m -> {
+         m.options.keyShift.setDown(true);
+         return true;
+      });
+      step("sneak_on_ground", 10, m -> {
+         m.options.keyShift.setDown(false);
+         boolean[] st = new boolean[2];
+         onServer(m, () -> {
+            DragonEntity d = ember(m);
+            st[0] = d != null && serverPlayer(m).getVehicle() == d;
+            st[1] = d != null && d.onGround();
+         });
+         check("sneak_on_ground_dismounts", !st[0] && st[1], "riding=" + st[0] + " dragon on ground=" + st[1] + " (already off while the key was still held at touchdown=" + offAtTouchdown[0] + ")");
+         return true;
+      });
+      // the old way back with the config option
+      step("classic_mount", 20, m -> {
+         onServer(m, () -> {
+            ModConfig.get().sneakDismountsInAir = true;
+            serverPlayer(m).setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            if (ember(m) != null) {
+               ember(m).mobInteract(serverPlayer(m), InteractionHand.MAIN_HAND);
+            }
+         });
+         return true;
+      });
+      step("classic_takeoff", 90, m -> {
+         m.options.keyJump.setDown(true);
+         return true;
+      });
+      step("classic_sneak", 15, m -> {
+         m.options.keyJump.setDown(false);
+         onServer(m, () -> startY[0] = ember(m) == null || serverPlayer(m).getVehicle() != ember(m) ? Double.NaN : ember(m).getY());
+         m.options.keyShift.setDown(true);
+         return true;
+      });
+      step("classic_check", 5, m -> {
+         m.options.keyShift.setDown(false);
+         boolean[] riding = new boolean[1];
+         onServer(m, () -> {
+            riding[0] = ember(m) != null && serverPlayer(m).getVehicle() == ember(m);
+            ModConfig.get().sneakDismountsInAir = false;
+         });
+         check("config_sneak_dismounts_in_air", !riding[0] && startY[0] > -52.0, String.format(Locale.ROOT, "riding=%s, was %.1f blocks up", riding[0], startY[0] - (-60.0)));
          return true;
       });
    }

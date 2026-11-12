@@ -538,6 +538,14 @@ public class DragonEntity extends TamableAnimal {
       return (Boolean)this.entityData.get(DATA_FLYING);
    }
 
+   /**
+    * While the dragon is in the air the rider's sneak key means "fly down" and not "dismount" (unless the config says
+    * sneakDismountsInAir). On the ground and in water sneaking dismounts as always.
+    */
+   public boolean sneakFliesDown() {
+      return this.isFlying() && !this.onGround() && !this.isInWater() && !ModConfig.get().sneakDismountsInAir;
+   }
+
    public void setFlying(boolean flying) {
       if (!flying) {
          this.takeoffTimer = 0;
@@ -770,6 +778,17 @@ public class DragonEntity extends TamableAnimal {
       }
 
       LivingEntity rider = this.getControllingPassenger();
+      if (this.sneakFliesDown()) {
+         // 1.2.8: high in the air the sneak key no longer throws the rider off. A passenger's rideTick() runs right after
+         // this tick and dismounts when the player's sneak flag is set, so the flag is taken back here; the rider's own
+         // client flies the dragon down instead (ClientHooks).
+         for (Entity passenger : this.getPassengers()) {
+            if (passenger instanceof Player player && player.isShiftKeyDown()) {
+               player.setShiftKeyDown(false);
+            }
+         }
+      }
+
       if (rider == null) {
          this.abilityHeld = false;
          if (!this.aiFlying) {

@@ -22,6 +22,7 @@
   "ability.skywyrms.void_blink": "Void Blink",
   "ability.skywyrms.tidal_jet": "Tidal Jet",
   "message.skywyrms.controls": "%s up  •  %s down  •  %s faster  •  %s %s  •  %s dismount",
+  "message.skywyrms.controls_safe": "%s up  •  %s down  •  %s faster  •  %s %s  •  %s down, on the ground dismount",
   "message.skywyrms.needs_saddle": "%s needs a saddle before you can ride",
   "message.skywyrms.staying": "%s will stay here",
   "message.skywyrms.following": "%s will follow you",
