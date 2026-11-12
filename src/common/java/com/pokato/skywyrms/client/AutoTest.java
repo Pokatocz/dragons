@@ -116,6 +116,10 @@ public final class AutoTest {
          eggShareSteps();
          return;
       }
+      if ("killdebug".equals(SCENARIO)) {
+         killDebugSteps();
+         return;
+      }
       if ("audit".equals(SCENARIO)) {
          auditSteps();
          return;
@@ -659,6 +663,44 @@ public final class AutoTest {
       });
    }
 
+   // ---------------------------------------------------------------- what does killing each thing throw?
+   private static void killDebugSteps() {
+      step("kd_summon", 40, m -> {
+         command(m, "summon skywyrms:ember_wyrm 0 -60 8 {NoAI:1b}");
+         command(m, "summon skywyrms:storm_wyrm 6 -60 8 {NoAI:1b}");
+         command(m, "summon skywyrms:dragon_egg 3 -60 4");
+         command(m, "summon minecraft:pig -4 -60 4 {NoAI:1b}");
+         return true;
+      });
+      step("kd_kill", 40, m -> {
+         onServer(m, () -> {
+            boolean first = true;
+            for (net.minecraft.world.entity.LivingEntity e : serverOverworld(m).getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, around(m, 32), x -> !(x instanceof net.minecraft.world.entity.player.Player))) {
+               if (e instanceof DragonEntity d && first) {
+                  first = false;
+                  d.tameTo(serverPlayer(m).getUUID());
+                  d.setSaddled(true);
+               }
+               String what = e.getType().toString() + (e instanceof DragonEntity d ? " saddled=" + d.isSaddled() + " tame=" + d.isTame() : "");
+               try {
+                  //#if MC >= 12102
+                  e.kill(serverOverworld(m));
+                  //#else
+                  e.kill();
+                  //#endif
+                  check("kill " + what, true, "removed=" + e.isRemoved() + " dead=" + e.isDeadOrDying());
+               } catch (Throwable t) {
+                  java.io.StringWriter w = new java.io.StringWriter();
+                  t.printStackTrace(new java.io.PrintWriter(w));
+                  Skywyrms.LOGGER.error("[autotest] KILL of {} threw: {}", what, w);
+                  check("kill " + what, false, t.toString());
+               }
+            }
+         });
+         return true;
+      });
+   }
+
    // ---------------------------------------------------------------- 1.2.8: checks from the bug hunt
    private static String dragonState(DragonEntity d) {
       return "tame=" + d.isTame() + " owner=" + DragonEntity.ownerUuid(d) + " saddled=" + d.isSaddled() + " stay=" + d.isOrderedToSit() + " body=" + d.getKind()
@@ -798,7 +840,11 @@ public final class AutoTest {
                   d.tameTo(player.getUUID());
                   for (net.minecraft.world.entity.animal.Animal animal : serverOverworld(m).getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, around(m, 16), a -> !(a instanceof DragonEntity))) {
                      if (animal instanceof net.minecraft.world.entity.OwnableEntity) {
+                        //#if MC >= 12111
+                        ((net.minecraft.world.entity.animal.equine.AbstractHorse)animal).tameWithName(player);
+                        //#else
                         ((net.minecraft.world.entity.animal.horse.AbstractHorse)animal).tameWithName(player);
+                        //#endif
                      } else {
                         d.setTarget(animal);
                      }
