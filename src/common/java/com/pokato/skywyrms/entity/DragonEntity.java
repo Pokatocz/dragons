@@ -781,8 +781,10 @@ public class DragonEntity extends TamableAnimal {
          );
       }
 
-      // config allowRiding off: a rider who was already on (e.g. saved riding before the change) gets off once landed
-      if (!ModConfig.get().allowRiding && (this.onGround() || this.isInWater()) && this.getFirstPassenger() instanceof Player) {
+      // config allowRiding off: a rider who was already on (e.g. saved riding before the change) gets off once landed.
+      // "Landed" is the dragon's own flight state too: while a player steers, onGround on the server comes from the
+      // player's client and can stay false on a dragon standing still (seen on Forge 1.21.11 and NeoForge 26.3).
+      if (!ModConfig.get().allowRiding && (!this.isFlying() || this.onGround() || this.isInWater()) && this.getFirstPassenger() instanceof Player) {
          this.ejectPassengers();
       }
 
