@@ -126,6 +126,10 @@ public final class AutoTest {
          eggShareSteps();
          return;
       }
+      if ("options".equals(SCENARIO)) {
+         optionsSteps();
+         return;
+      }
       if ("killdebug".equals(SCENARIO)) {
          killDebugSteps();
          return;
@@ -669,6 +673,302 @@ public final class AutoTest {
             }
          }
          command(m, "tp @a 0 -60 0 0 10");
+         return true;
+      });
+   }
+
+   // ---------------------------------------------------------------- 1.2.9: riding, saddles, hostile dragons, despawning
+   private static DragonEntity byId(Minecraft m, java.util.UUID id) {
+      return id != null && serverOverworld(m).getEntity(id) instanceof DragonEntity d && d.isAlive() ? d : null;
+   }
+
+   /**
+    * "options": the config options of 1.2.9 with their defaults, in the real game: allowSaddles, allowRiding (also a
+    * rider who is already on), hostileChance through the real natural spawn code, a hostile dragon going for a survival
+    * player and keeping that after its chunk was unloaded, hostileTamable both ways, and wildDespawn through vanilla's
+    * own despawn check on a force-loaded chunk 140 blocks away.
+    */
+   private static void optionsSteps() {
+      java.util.UUID[] ids = new java.util.UUID[6];
+      step("opt_defaults", 5, m -> {
+         ModConfig fresh = ModConfig.fromJson(new com.google.gson.JsonObject());
+         com.google.gson.JsonObject json = fresh.toJson();
+         boolean ok = fresh.allowRiding && fresh.allowSaddles && Math.abs(fresh.hostileChance - 0.33F) < 1.0E-4F && fresh.hostileTamable && !fresh.wildDespawn
+            && json.has("allowRiding") && json.has("allowSaddles") && json.has("hostileChance") && json.has("hostileTamable") && json.has("wildDespawn");
+         check("config_129_defaults", ok, "allowRiding=" + fresh.allowRiding + " allowSaddles=" + fresh.allowSaddles + " hostileChance=" + fresh.hostileChance
+            + " hostileTamable=" + fresh.hostileTamable + " wildDespawn=" + fresh.wildDespawn);
+         return true;
+      });
+      // ---- wildDespawn
+      step("despawn_setup", 60, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "tp @a 0 -60 0 0 0");
+         command(m, "forceload add 136 -8 152 8");
+         return true;
+      });
+      step("despawn_summon", 40, m -> {
+         command(m, "summon skywyrms:storm_wyrm 140 -60 -4 {NoAI:1b}");
+         command(m, "summon skywyrms:frost_wyrm 140 -60 4 {NoAI:1b}");
+         command(m, "summon skywyrms:thorn_wyrm 148 -60 -4 {NoAI:1b}");
+         command(m, "summon skywyrms:tide_wyrm 148 -60 4 {NoAI:1b}");
+         return true;
+      });
+      step("despawn_prepare", 5, m -> {
+         onServer(m, () -> {
+            for (DragonEntity d : serverOverworld(m).getEntitiesOfClass(DragonEntity.class, new AABB(120.0, -70.0, -30.0, 170.0, -30.0, 30.0))) {
+               if (d.getKind() == DragonKind.STORM && ids[0] == null) {
+                  ids[0] = d.getUUID(); // wild adult
+               } else if (d.getKind() == DragonKind.FROST && ids[1] == null) {
+                  d.tameTo(serverPlayer(m).getUUID());
+                  ids[1] = d.getUUID();
+               } else if (d.getKind() == DragonKind.THORN && ids[2] == null) {
+                  d.setCustomName(net.minecraft.network.chat.Component.literal("Named"));
+                  ids[2] = d.getUUID();
+               } else if (d.getKind() == DragonKind.TIDE && ids[3] == null) {
+                  d.makeHatchling(24000);
+                  ids[3] = d.getUUID();
+               }
+            }
+         });
+         return ids[0] != null && ids[1] != null && ids[2] != null && ids[3] != null || stepTicks > 200;
+      });
+      step("despawn_off", 40, m -> true);
+      step("despawn_off_check", 5, m -> {
+         int[] alive = new int[1];
+         onServer(m, () -> {
+            for (int i = 0; i < 4; i++) {
+               if (byId(m, ids[i]) != null) {
+                  alive[0]++;
+               }
+            }
+            ModConfig.get().wildDespawn = true;
+         });
+         check("despawn_default_off_nobody_despawns", alive[0] == 4, alive[0] + " of 4 dragons 140 blocks away still there after 2 s");
+         return true;
+      });
+      step("despawn_on", 40, m -> true);
+      step("despawn_on_check", 5, m -> {
+         boolean[] there = new boolean[4];
+         onServer(m, () -> {
+            for (int i = 0; i < 4; i++) {
+               there[i] = byId(m, ids[i]) != null;
+            }
+            ModConfig.get().wildDespawn = false;
+            serverCommand(m, "kill @e[type=!minecraft:player]");
+            serverCommand(m, "forceload remove 136 -8 152 8");
+         });
+         check("despawn_on_only_the_wild_adult_goes", ids[0] != null && !there[0] && there[1] && there[2] && there[3],
+            "still there: wild=" + there[0] + " tamed=" + there[1] + " named=" + there[2] + " hatchling=" + there[3]);
+         return true;
+      });
+      // ---- allowSaddles, allowRiding
+      step("ride_setup", 40, m -> {
+         command(m, "tp @a 0 -60 0 0 0");
+         command(m, "summon skywyrms:storm_wyrm 0 -60 7");
+         return true;
+      });
+      step("ride_saddle", 10, m -> {
+         String[] r = {"no dragon"};
+         boolean[] ok = new boolean[1];
+         onServer(m, () -> {
+            ServerPlayer p = serverPlayer(m);
+            DragonEntity d = null;
+            for (DragonEntity x : dragons(m)) {
+               if (x.getKind() == DragonKind.STORM) {
+                  d = x;
+               }
+            }
+            if (d == null) {
+               return;
+            }
+            ids[4] = d.getUUID();
+            d.tameTo(p.getUUID());
+            d.setOrderedToSit(true);
+            ModConfig.get().allowSaddles = false;
+            p.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.SADDLE));
+            d.mobInteract(p, InteractionHand.MAIN_HAND);
+            boolean refused = !d.isSaddled();
+            ModConfig.get().allowSaddles = true;
+            d.mobInteract(p, InteractionHand.MAIN_HAND);
+            r[0] = "allowSaddles=false: saddled=" + !refused + " | true: saddled=" + d.isSaddled();
+            ok[0] = refused && d.isSaddled();
+         });
+         check("allow_saddles_off_refuses_the_saddle", ok[0], r[0]);
+         return true;
+      });
+      step("ride_mount", 10, m -> {
+         String[] r = {"no dragon"};
+         boolean[] ok = new boolean[1];
+         onServer(m, () -> {
+            ServerPlayer p = serverPlayer(m);
+            DragonEntity d = byId(m, ids[4]);
+            if (d == null) {
+               return;
+            }
+            p.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            ModConfig.get().allowRiding = false;
+            d.mobInteract(p, InteractionHand.MAIN_HAND);
+            boolean byClick = p.getVehicle() == d;
+            boolean byCode = p.startRiding(d);
+            boolean refused = !byClick && !byCode && p.getVehicle() != d;
+            ModConfig.get().allowRiding = true;
+            d.mobInteract(p, InteractionHand.MAIN_HAND);
+            r[0] = "allowRiding=false: on by click=" + byClick + ", by startRiding=" + byCode + " | true: riding=" + (p.getVehicle() == d);
+            ok[0] = refused && p.getVehicle() == d;
+         });
+         check("allow_riding_off_nobody_gets_on", ok[0], r[0]);
+         return true;
+      });
+      step("ride_eject", 40, m -> {
+         onServer(m, () -> ModConfig.get().allowRiding = false);
+         return true;
+      });
+      step("ride_eject_check", 5, m -> {
+         boolean[] riding = new boolean[1];
+         onServer(m, () -> {
+            riding[0] = serverPlayer(m).getVehicle() != null;
+            ModConfig.get().allowRiding = true;
+            serverCommand(m, "kill @e[type=!minecraft:player]");
+         });
+         check("allow_riding_off_rider_already_on_gets_off_on_the_ground", !riding[0], "still riding=" + riding[0]);
+         return true;
+      });
+      // ---- hostileChance, hostile behaviour, hostileTamable
+      step("hostile_go", 60, m -> {
+         command(m, "tp @a 1000 -60 1000 0 0");
+         command(m, "difficulty easy");
+         return true;
+      });
+      step("hostile_spawn", 20, m -> {
+         String[] r = new String[1];
+         boolean[] ok = new boolean[1];
+         onServer(m, () -> {
+            ModConfig c = ModConfig.get();
+            net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+            ServerPlayer p = serverPlayer(m);
+            int[] none = new int[2];
+            int[] all = new int[2];
+            c.hostileChance = 0.0F;
+            for (int i = 0; i < 60 && none[0] < 5; i++) {
+               DragonEntity d = com.pokato.skywyrms.server.DragonSpawner.trySpawn(level, p, c);
+               if (d != null) {
+                  none[0]++;
+                  none[1] += d.isHostile() ? 1 : 0;
+                  d.discard();
+               }
+            }
+            c.hostileChance = 1.0F;
+            DragonEntity kept = null;
+            for (int i = 0; i < 60 && all[0] < 5; i++) {
+               DragonEntity d = com.pokato.skywyrms.server.DragonSpawner.trySpawn(level, p, c);
+               if (d != null) {
+                  all[0]++;
+                  all[1] += d.isHostile() ? 1 : 0;
+                  if (all[0] < 5) {
+                     d.discard();
+                  } else {
+                     kept = d;
+                  }
+               }
+            }
+            c.hostileChance = 0.33F;
+            if (kept != null) {
+               ids[5] = kept.getUUID();
+               serverCommand(m, "tp " + kept.getUUID() + " 1000 -60 1012");
+            }
+            r[0] = "hostileChance=0: " + none[1] + " hostile of " + none[0] + " | hostileChance=1: " + all[1] + " hostile of " + all[0];
+            ok[0] = none[0] == 5 && none[1] == 0 && all[0] == 5 && all[1] == 5 && kept != null;
+         });
+         check("hostile_chance_used_by_natural_spawns", ok[0], r[0]);
+         command(m, "gamemode survival @a");
+         command(m, "effect give @a minecraft:resistance 600 255 true");
+         command(m, "effect give @a minecraft:fire_resistance 600 0 true");
+         command(m, "effect give @a minecraft:saturation 600 10 true");
+         return true;
+      });
+      step("hostile_attacks", 100, m -> true);
+      shot("hostile_dragon");
+      step("hostile_attacks_check", 5, m -> {
+         String[] r = {"no dragon"};
+         boolean[] ok = new boolean[1];
+         onServer(m, () -> {
+            DragonEntity d = byId(m, ids[5]);
+            ServerPlayer p = serverPlayer(m);
+            if (d != null) {
+               r[0] = "hostile=" + d.isHostile() + " target=" + (d.getTarget() == null ? "-" : d.getTarget().getType().toString()) + " distance=" + Math.round(Math.sqrt(d.distanceToSqr(p)));
+               ok[0] = d.isHostile() && d.getTarget() == p;
+            }
+         });
+         check("hostile_dragon_goes_for_survival_player", ok[0], r[0]);
+         return true;
+      });
+      boolean[] unloaded = new boolean[1];
+      step("hostile_leave", 20, m -> {
+         command(m, "tp @a 3000 -60 3000");
+         return true;
+      });
+      step("hostile_unloaded", 20, m -> {
+         boolean[] gone = new boolean[1];
+         onServer(m, () -> gone[0] = ids[5] != null && serverOverworld(m).getEntity(ids[5]) == null);
+         if (gone[0] || stepTicks > 580) {
+            unloaded[0] = gone[0];
+            return true;
+         }
+         return false;
+      });
+      step("hostile_back", 20, m -> {
+         command(m, "tp @a 1000 -60 1000 0 0");
+         return true;
+      });
+      step("hostile_persist_check", 20, m -> {
+         boolean[] st = new boolean[2];
+         onServer(m, () -> {
+            DragonEntity d = byId(m, ids[5]);
+            st[0] = d != null;
+            st[1] = d != null && d.isHostile();
+         });
+         if (!st[0] && stepTicks < 400) {
+            return false;
+         }
+         check("hostile_kept_after_chunk_unload", unloaded[0] && st[1], "chunk unloaded=" + unloaded[0] + " found again=" + st[0] + " hostile=" + st[1]);
+         return true;
+      });
+      step("hostile_tame", 40, m -> {
+         String[] r = {"no dragon"};
+         boolean[] ok = new boolean[1];
+         onServer(m, () -> {
+            DragonEntity d = byId(m, ids[5]);
+            ServerPlayer p = serverPlayer(m);
+            if (d == null) {
+               return;
+            }
+            ModConfig c = ModConfig.get();
+            c.tameChance = 1.0F;
+            c.hostileTamable = false;
+            p.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.BEEF, 4));
+            d.mobInteract(p, InteractionHand.MAIN_HAND);
+            boolean refused = !d.isTame() && d.isHostile() && p.getMainHandItem().getCount() == 4;
+            String first = "hostileTamable=false: tame=" + d.isTame() + " hostile=" + d.isHostile() + " beef left=" + p.getMainHandItem().getCount();
+            c.hostileTamable = true;
+            d.mobInteract(p, InteractionHand.MAIN_HAND);
+            boolean tamed = d.isTame() && !d.isHostile() && d.getTarget() == null && p.getMainHandItem().getCount() == 3;
+            r[0] = first + " | true: tame=" + d.isTame() + " hostile=" + d.isHostile() + " target=" + (d.getTarget() == null ? "-" : "set") + " beef left=" + p.getMainHandItem().getCount();
+            ok[0] = refused && tamed;
+            c.tameChance = 1.0F / 3.0F;
+         });
+         check("hostile_tamable_option_both_ways", ok[0], r[0]);
+         return true;
+      });
+      step("hostile_tamed_stays_calm", 60, m -> true);
+      step("hostile_tamed_check", 5, m -> {
+         boolean[] calm = new boolean[1];
+         onServer(m, () -> {
+            DragonEntity d = byId(m, ids[5]);
+            calm[0] = d != null && d.getTarget() == null && !d.isHostile();
+            serverCommand(m, "gamemode creative @a");
+            serverCommand(m, "effect clear @a");
+         });
+         check("hostile_after_taming_no_longer_attacks", calm[0], "");
          return true;
       });
    }

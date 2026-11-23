@@ -153,6 +153,7 @@ public class DragonEntity extends TamableAnimal {
    private boolean aiFlying;
    private int airTicks;
    private int flyTicks;
+   private boolean hostile; // 1.2.9: some natural spawns attack players (config hostileChance)
    private final java.util.List<double[]> venomPools = new java.util.ArrayList<>();
    private int takeoffTimer;
    private double takeoffImpulse;
@@ -471,6 +472,7 @@ public class DragonEntity extends TamableAnimal {
    }
 
    public void tameTo(UUID uuid) {
+      this.hostile = false;
       //#if MC >= 12005
       this.setTame(true, true);
       //#else
@@ -584,12 +586,18 @@ public class DragonEntity extends TamableAnimal {
       super.addAdditionalSaveData(output);
       output.putBoolean("Saddled", this.isSaddled());
       output.putFloat("Energy", this.energy);
+      if (this.isHostile()) {
+         output.putBoolean("Hostile", true);
+      }
       this.genes().save(output);
    //#else
    public void addAdditionalSaveData(CompoundTag tag) {
       super.addAdditionalSaveData(tag);
       tag.putBoolean("Saddled", this.isSaddled());
       tag.putFloat("Energy", this.energy);
+      if (this.isHostile()) {
+         tag.putBoolean("Hostile", true);
+      }
       tag.put("Genes", this.genes().toTag());
    //#endif
       if (this.isBaby() && this.growTicksTotal > 0) {
@@ -605,11 +613,13 @@ public class DragonEntity extends TamableAnimal {
    public void readAdditionalSaveData(ValueInput input) {
       super.readAdditionalSaveData(input);
       this.setSaddled(input.getBooleanOr("Saddled", false));
+      this.hostile = input.getBooleanOr("Hostile", false);
       this.energy = Mth.clamp(input.getFloatOr("Energy", 100.0F), 0.0F, 100.0F);
    //#else
    public void readAdditionalSaveData(CompoundTag tag) {
       super.readAdditionalSaveData(tag);
       this.setSaddled(Nbt.getBoolean(tag, "Saddled", false));
+      this.hostile = Nbt.getBoolean(tag, "Hostile", false);
       this.energy = Mth.clamp(Nbt.getFloat(tag, "Energy", 100.0F), 0.0F, 100.0F);
    //#endif
       this.entityData.set(DATA_ENERGY, Math.round(this.energy));
@@ -646,6 +656,7 @@ public class DragonEntity extends TamableAnimal {
       this.targetSelector.addGoal(1, new OwnerHurtByTargetGoal(this));
       this.targetSelector.addGoal(2, new OwnerHurtTargetGoal(this));
       this.targetSelector.addGoal(3, new HurtByTargetGoal(this, new Class[0]));
+      this.targetSelector.addGoal(4, new com.pokato.skywyrms.entity.ai.HostileTargetGoal(this));
    }
 
    public boolean isFood(ItemStack stack) {
@@ -762,6 +773,17 @@ public class DragonEntity extends TamableAnimal {
    private void serverTick(ServerLevel level) {
       if (this.genes == null) {
          this.setGenes(DragonGenes.pure(this.kind), false);
+      }
+
+      if (this.isHostile() && this.tickCount % 40 == 0) {
+         level.sendParticles(
+            ParticleTypes.ANGRY_VILLAGER, this.getX(), this.getY() + this.getBbHeight() * 0.9, this.getZ(), 2, this.getBbWidth() * 0.3, 0.2, this.getBbWidth() * 0.3, 0.0
+         );
+      }
+
+      // config allowRiding off: a rider who was already on (e.g. saved riding before the change) gets off once landed
+      if (!ModConfig.get().allowRiding && (this.onGround() || this.isInWater()) && this.getFirstPassenger() instanceof Player) {
+         this.ejectPassengers();
       }
 
       if (this.tickCount % 10 == 0) {
@@ -1296,7 +1318,15 @@ public class DragonEntity extends TamableAnimal {
       } else if (!this.isTame()) {
          if (this.isTameItem(stack) && !this.isBaby()) {
             if (!client) {
-               if (this.getTarget() == player) {
+               if (this.isHostile() && !ModConfig.get().hostileTamable) {
+                  this.level().broadcastEntityEvent(this, (byte)6);
+                  message(player, Component.translatable("message.skywyrms.hostile_untamable", new Object[]{this.getDisplayName()}));
+                  return InteractionResult.SUCCESS;
+               }
+
+               // a dragon you hit takes no food from you while it is angry at you; a hostile one goes for every player
+               // near it, so that alone does not stop it from being tamed (1.2.9)
+               if (this.getTarget() == player && (!this.isHostile() || this.getLastHurtByMob() == player)) {
                   this.level().broadcastEntityEvent(this, (byte)6);
                   return InteractionResult.SUCCESS;
                }
@@ -1317,6 +1347,7 @@ public class DragonEntity extends TamableAnimal {
                //#endif
                if (this.random.nextFloat() < ModConfig.get().tameChance) {
                   this.tame(player);
+                  this.hostile = false;
                   this.getNavigation().stop();
                   this.setTarget(null);
                   this.setOrderedToSit(false);
@@ -1429,6 +1460,8 @@ public class DragonEntity extends TamableAnimal {
          if (!client) {
             if (this.isBaby()) {
                message(player, Component.translatable("message.skywyrms.too_young_to_ride", new Object[]{this.getDisplayName()}));
+            } else if (!ModConfig.get().allowSaddles) {
+               message(player, Component.translatable("message.skywyrms.saddles_disabled"));
             } else {
                //#if MC >= 12005
                stack.consume(1, player);
@@ -1481,9 +1514,13 @@ public class DragonEntity extends TamableAnimal {
          return InteractionResult.SUCCESS;
       } else if (this.isSaddled()) {
          if (!client && !this.isVehicle()) {
-            this.setOrderedToSit(false);
-            this.setInSittingPose(false);
-            player.startRiding(this);
+            if (!ModConfig.get().allowRiding) {
+               message(player, Component.translatable("message.skywyrms.riding_disabled"));
+            } else {
+               this.setOrderedToSit(false);
+               this.setInSittingPose(false);
+               player.startRiding(this);
+            }
          }
 
          return InteractionResult.SUCCESS;
@@ -1494,6 +1531,28 @@ public class DragonEntity extends TamableAnimal {
 
          return InteractionResult.SUCCESS;
       }
+   }
+
+   /** A wild dragon that attacks players (config hostileChance). Taming it ends that. */
+   public boolean isHostile() {
+      return this.hostile && !this.isTame();
+   }
+
+   public void setHostile(boolean hostile) {
+      this.hostile = hostile;
+   }
+
+   /** 1.2.9, config allowRiding: no player can get on (the /ride command still can, it forces it). */
+   protected boolean canAddPassenger(Entity passenger) {
+      return (ModConfig.get().allowRiding || !(passenger instanceof Player)) && super.canAddPassenger(passenger);
+   }
+
+   /**
+    * 1.2.9, config wildDespawn: a wild dragon despawns like other mobs when no player is near (vanilla Mob.checkDespawn:
+    * at once beyond 128 blocks for a creature, now and then beyond 32). Animal says never, and that stays the default.
+    */
+   public boolean removeWhenFarAway(double distanceSquared) {
+      return ModConfig.get().wildDespawn && !this.isTame() && !this.isBaby() && !this.hasCustomName() && !this.isLeashed() && !this.isVehicle() && !this.isInLove();
    }
 
    public static void message(Player player, Component message) {

@@ -107,6 +107,7 @@ public final class DragonSpawner {
       dragon.moveTo(dragon.getX(), dragon.getY(), dragon.getZ(), random.nextFloat() * 360.0F, 0.0F);
       //#endif
       dragon.setGenes(DragonGenes.wild(kind, blood, random), true);
+      dragon.setHostile(random.nextFloat() < config.hostileChance); // 1.2.9
       BlockPos pos = dragon.blockPosition();
       //#if MC >= 12102
       dragon.finalizeSpawn(level, level.getCurrentDifficultyAt(pos), EntitySpawnReason.NATURAL, null);

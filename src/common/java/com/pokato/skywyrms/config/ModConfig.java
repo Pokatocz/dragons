@@ -53,6 +53,12 @@ public final class ModConfig {
    // 1.2.8: true = while the dragon is in the air the sneak key flies down and only dismounts on the ground or in water.
    // The default stays as it always was: the sneak key dismounts, also in the air.
    public boolean sneakFliesDown = false;
+   // 1.2.9
+   public boolean allowRiding = true;
+   public boolean allowSaddles = true;
+   public float hostileChance = 0.33F;
+   public boolean hostileTamable = true;
+   public boolean wildDespawn = false;
    private static ModConfig instance;
 
    public static final String[] ABILITY_IDS = {"fire_breath", "frost_breath", "lightning", "venom_spit", "void_blink", "tidal_jet"};
@@ -182,6 +188,11 @@ public final class ModConfig {
       c.wingSoundVolume = number(json, "wingSoundVolume", 1.0F, 0.0F, 4.0F);
       c.wingSoundPitch = number(json, "wingSoundPitch", 1.0F, 0.25F, 2.0F);
       c.sneakFliesDown = bool(json, "sneakFliesDown", false);
+      c.allowRiding = bool(json, "allowRiding", true);
+      c.allowSaddles = bool(json, "allowSaddles", true);
+      c.hostileChance = number(json, "hostileChance", 0.33F, 0.0F, 1.0F);
+      c.hostileTamable = bool(json, "hostileTamable", true);
+      c.wildDespawn = bool(json, "wildDespawn", false);
       return c;
    }
 
@@ -215,6 +226,11 @@ public final class ModConfig {
       out.addProperty("wingSoundVolume", this.wingSoundVolume);
       out.addProperty("wingSoundPitch", this.wingSoundPitch);
       out.addProperty("sneakFliesDown", this.sneakFliesDown);
+      out.addProperty("allowRiding", this.allowRiding);
+      out.addProperty("allowSaddles", this.allowSaddles);
+      out.addProperty("hostileChance", this.hostileChance);
+      out.addProperty("hostileTamable", this.hostileTamable);
+      out.addProperty("wildDespawn", this.wildDespawn);
       JsonObject h = new JsonObject();
       help(h, "items", "Item lists take item ids (\"minecraft:diamond\" or just \"diamond\") and tags (\"#minecraft:meat\"). An empty list [] keeps the default.");
       help(h, "tameItems", "Items that tame a wild adult dragon, e.g. [\"diamond\", \"emerald\", \"gold_ingot\"]. Default: meat (Tide Wyrm also fish).");
@@ -225,6 +241,11 @@ public final class ModConfig {
       help(h, "abilities", "false switches an ability off for every dragon (riders and wild dragons, and a hybrid's blood effect).");
       help(h, "riderSeeThrough", "\"off\", \"first_person\" or \"always\": the dragon you ride is drawn see-through (only for you) so it does not block the view.");
       help(h, "wingSound", "wingSoundVolume and wingSoundPitch: 1.0 = normal; a lower pitch sounds heavier.");
+      help(h, "allowRiding", "true (default): players can ride saddled dragons. false: nobody can climb on a dragon; tamed dragons still follow and fight for their owner.");
+      help(h, "allowSaddles", "true (default): a saddle can be put on a tamed dragon. false: saddles can't be put on (shears still take off a saddle that is already on).");
+      help(h, "hostileChance", "0 to 1, default 0.33: the chance that a naturally spawned wild dragon is hostile. A hostile dragon attacks players who come within about 24 blocks (not in creative, spectator or peaceful) and shows angry particles. Summoned dragons are never hostile.");
+      help(h, "hostileTamable", "true (default): a hostile dragon can be tamed with its taming item like any wild dragon and then stops being hostile. false: hostile dragons can't be tamed.");
+      help(h, "wildDespawn", "false (default): wild dragons never despawn. true: wild dragons despawn like other mobs when no player is near (at once beyond 128 blocks, now and then beyond 32). Tamed, named, leashed dragons and hatchlings never despawn.");
       help(h, "sneakFliesDown", "false (default): the sneak key (Left Shift) dismounts, also in the air. true: in the air the sneak key flies down and you only dismount on the ground or in water. In multiplayer set it on the server and in your own game.");
       help(h, "restart", "Changes take effect after restarting the game / server.");
       out.add("_help", h);

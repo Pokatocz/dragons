@@ -79,6 +79,10 @@ public final class DragonInfo {
          Component.literal("").append(dragon.getDisplayName().copy().withStyle(st_ -> st_.withColor(dragon.getKind().color())).withStyle(ChatFormatting.BOLD))
       );
       //#endif
+      if (dragon.isHostile()) {
+         player.sendSystemMessage(Component.translatable("info.skywyrms.hostile").withStyle(ChatFormatting.RED));
+      }
+
       if (dragon.isBaby()) {
          player.sendSystemMessage(
             Component.translatable("info.skywyrms.growth", new Object[]{Math.round(dragon.growth() * 100.0F)}).withStyle(ChatFormatting.YELLOW)
