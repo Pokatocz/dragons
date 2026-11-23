@@ -126,6 +126,10 @@ public final class AutoTest {
          eggShareSteps();
          return;
       }
+      if ("ridedebug".equals(SCENARIO)) {
+         rideDebugSteps();
+         return;
+      }
       if ("options".equals(SCENARIO)) {
          optionsSteps();
          return;
@@ -677,6 +681,63 @@ public final class AutoTest {
       });
    }
 
+   /** "ridedebug": 25 times mount, switch allowRiding off, and see whether the rider is put off within 20 ticks */
+   private static void rideDebugSteps() {
+      java.util.UUID[] id = new java.util.UUID[1];
+      int[] fails = new int[1];
+      StringBuilder log = new StringBuilder();
+      step("rd_setup", 40, m -> {
+         command(m, "tp @a 0 -60 0 0 0");
+         command(m, "summon skywyrms:storm_wyrm 0 -60 7");
+         return true;
+      });
+      step("rd_prepare", 20, m -> {
+         onServer(m, () -> {
+            for (DragonEntity x : dragons(m)) {
+               x.tameTo(serverPlayer(m).getUUID());
+               x.setSaddled(true);
+               id[0] = x.getUUID();
+            }
+         });
+         return true;
+      });
+      for (int i = 0; i < 25; i++) {
+         int n = i;
+         step("rd_mount_" + n, 10 + n % 7, m -> {
+            onServer(m, () -> {
+               ModConfig.get().allowRiding = true;
+               DragonEntity d = byId(m, id[0]);
+               if (d != null) {
+                  serverPlayer(m).setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                  d.mobInteract(serverPlayer(m), InteractionHand.MAIN_HAND);
+               }
+            });
+            return true;
+         });
+         step("rd_off_" + n, 20, m -> {
+            onServer(m, () -> ModConfig.get().allowRiding = false);
+            return true;
+         });
+         step("rd_check_" + n, 1, m -> {
+            onServer(m, () -> {
+               DragonEntity d = byId(m, id[0]);
+               boolean riding = serverPlayer(m).getVehicle() != null;
+               if (riding) {
+                  fails[0]++;
+                  log.append(" #").append(n).append(": flying=").append(d.isFlying()).append(" onGround=").append(d.onGround()).append(" passengers=").append(d.getPassengers().size())
+                     .append(" cfg=").append(ModConfig.get().allowRiding).append(" same cfg obj=").append(ModConfig.get() == ModConfig.get());
+               }
+            });
+            return true;
+         });
+      }
+      step("rd_result", 1, m -> {
+         onServer(m, () -> ModConfig.get().allowRiding = true);
+         check("ride_eject_25_times", fails[0] == 0, fails[0] + " of 25 still riding" + log);
+         return true;
+      });
+   }
+
    // ---------------------------------------------------------------- 1.2.9: riding, saddles, hostile dragons, despawning
    private static DragonEntity byId(Minecraft m, java.util.UUID id) {
       return id != null && serverOverworld(m).getEntity(id) instanceof DragonEntity d && d.isAlive() ? d : null;
@@ -762,9 +823,22 @@ public final class AutoTest {
          return true;
       });
       // ---- allowSaddles, allowRiding
-      step("ride_setup", 40, m -> {
+      step("ride_setup", 2, m -> {
          command(m, "tp @a 0 -60 0 0 0");
          command(m, "summon skywyrms:storm_wyrm 0 -60 7");
+         return true;
+      });
+      // tame it at once: a wild dragon may take off on its own (WanderFlightGoal), and a ridden dragon in the air keeps
+      // its rider until it lands - which made the eject check below fail now and then
+      step("ride_tame", 40, m -> {
+         onServer(m, () -> {
+            for (DragonEntity x : dragons(m)) {
+               if (x.getKind() == DragonKind.STORM) {
+                  x.tameTo(serverPlayer(m).getUUID());
+                  x.setOrderedToSit(true);
+               }
+            }
+         });
          return true;
       });
       step("ride_saddle", 10, m -> {
@@ -825,12 +899,18 @@ public final class AutoTest {
       });
       step("ride_eject_check", 5, m -> {
          boolean[] riding = new boolean[1];
+         String[] state = {""};
          onServer(m, () -> {
             riding[0] = serverPlayer(m).getVehicle() != null;
+            DragonEntity d = byId(m, ids[4]);
+            if (d != null) {
+               state[0] = " dragon: flying=" + d.isFlying() + " onGround=" + d.onGround() + " inWater=" + d.isInWater() + " passengers=" + d.getPassengers().size()
+                  + " y=" + String.format(Locale.ROOT, "%.2f", d.getY()) + " config allowRiding=" + ModConfig.get().allowRiding;
+            }
             ModConfig.get().allowRiding = true;
             serverCommand(m, "kill @e[type=!minecraft:player]");
          });
-         check("allow_riding_off_rider_already_on_gets_off_on_the_ground", !riding[0], "still riding=" + riding[0]);
+         check("allow_riding_off_rider_already_on_gets_off_on_the_ground", !riding[0], "still riding=" + riding[0] + state[0]);
          return true;
       });
       // ---- hostileChance, hostile behaviour, hostileTamable
