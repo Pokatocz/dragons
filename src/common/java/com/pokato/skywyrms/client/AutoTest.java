@@ -126,6 +126,10 @@ public final class AutoTest {
          eggShareSteps();
          return;
       }
+      if ("media".equals(SCENARIO)) {
+         mediaSteps();
+         return;
+      }
       if ("ridedebug".equals(SCENARIO)) {
          rideDebugSteps();
          return;
@@ -677,6 +681,134 @@ public final class AutoTest {
             }
          }
          command(m, "tp @a 0 -60 0 0 10");
+         return true;
+      });
+   }
+
+   // ---------------------------------------------------------------- media: real in-game pictures for the store pages
+   /** keeps the client-side dragons' roar at its peak (jaw wide open) while a picture is taken */
+   private static void holdRoar(Minecraft m, DragonKind kind) {
+      for (DragonEntity d : m.level.getEntitiesOfClass(DragonEntity.class, m.player.getBoundingBox().inflate(96.0))) {
+         if (kind == null || d.getKind() == kind) {
+            d.anim.roarTicks = 17;
+         }
+      }
+   }
+
+   /**
+    * "media" (launcher: --world normal, MC_RES=1920x1080): pictures straight from the game, nothing painted.
+    * Icon scene: an Ember Wyrm high in the sky with its jaw open, shot from a few camera spots each in front of a black
+    * and then a white wall (the two pictures give a clean cut-out). Then each dragon standing in a meadow, two breath
+    * shots and a flight shot from behind.
+    */
+   private static void mediaSteps() {
+      int[] ground = new int[3]; // x, y, z of the meadow spot
+      step("media_setup", 40, m -> {
+         m.options.hideGui = true;
+         m.options.renderDistance().set(12);
+         command(m, "gamemode spectator @a");
+         command(m, "time set 6000");
+         command(m, "weather clear");
+         command(m, "tp @a 0 200 14 180 0");
+         return true;
+      });
+      // a closed box lit evenly by light blocks: black walls, then the same walls white, then both without the dragon
+      String box = "-15 189 -15 15 219 15";
+      String inside = "-14 190 -14 14 218 14";
+      step("media_icon_scene", 40, m -> {
+         command(m, "fill " + box + " minecraft:black_concrete hollow");
+         command(m, "fill " + inside + " minecraft:light[level=15] replace air");
+         command(m, "summon skywyrms:ember_wyrm 0 190 0 {NoAI:1b,Silent:1b,Rotation:[90f,0f]}");
+         command(m, "tp @a -1 195 8 facing -4.5 196 0");
+         return true;
+      });
+      step("media_icon_roar", 6, m -> {
+         holdRoar(m, DragonKind.EMBER);
+         return stepTicks > 40;
+      });
+      step("media_icon_freeze", 10, m -> {
+         holdRoar(m, DragonKind.EMBER);
+         command(m, "tick freeze");
+         return true;
+      });
+      double[][] cams = {
+         {-1.5, 193.8, 5.5, -4.8, 193.5, 0.5}, {-0.5, 194.2, 6.5, -4.8, 193.5, 0.5}, {-2.5, 193.2, 4.5, -5.0, 193.6, 0.5},
+         {0.5, 194.5, 7.5, -4.5, 193.5, 0.5}, {-2.0, 195.0, 5.5, -4.8, 193.3, 0.5}, {-1.0, 192.8, 5.0, -4.8, 193.8, 0.5}};
+      String[] walls = {"black", "white"};
+      for (boolean plate : new boolean[] {false, true}) {
+         if (plate) {
+            step("media_icon_remove", 10, m -> {
+               command(m, "kill @e[type=skywyrms:ember_wyrm]");
+               return true;
+            });
+         }
+         for (int i = 0; i < cams.length; i++) {
+            int n = i;
+            for (String wall : walls) {
+               String other = wall.equals("black") ? "white" : "black";
+               step("media_icon_" + (plate ? "plate_" : "") + n + "_" + wall, 50, m -> {
+                  command(m, String.format(Locale.ROOT, "tp @a %.2f %.2f %.2f facing %.2f %.2f %.2f", cams[n][0], cams[n][1], cams[n][2], cams[n][3], cams[n][4], cams[n][5]));
+                  command(m, "fill " + box + " minecraft:" + wall + "_concrete replace minecraft:" + other + "_concrete");
+                  return true;
+               });
+               shot("icon_" + n + "_" + wall + (plate ? "_plate" : ""));
+            }
+         }
+      }
+      step("media_icon_done", 10, m -> {
+         command(m, "tick unfreeze");
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "fill " + box + " minecraft:air");
+         return true;
+      });
+      // ---- each dragon on open plains (found by the spawnstat scenario in this seed)
+      step("media_meadow", 60, m -> {
+         onServer(m, () -> {
+            net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+            ground[0] = -238;
+            ground[2] = -190;
+            ground[1] = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, ground[0], ground[2]);
+         });
+         command(m, String.format(Locale.ROOT, "tp @a %d %d %d", ground[0], ground[1] + 20, ground[2] + 20));
+         return true;
+      });
+      step("media_meadow_load", 100, m -> true);
+      DragonKind[] kinds = DragonKind.values();
+      for (DragonKind kind : kinds) {
+         step("media_portrait_" + kind, 60, m -> {
+            command(m, "kill @e[type=!minecraft:player]");
+            onServer(m, () -> {
+               net.minecraft.server.level.ServerLevel level = serverOverworld(m);
+               ground[1] = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, ground[0], ground[2]);
+            });
+            command(m, String.format(Locale.ROOT, "summon skywyrms:%s_wyrm %d %d %d {NoAI:1b,Silent:1b,Rotation:[60f,0f]}", kind.name().toLowerCase(Locale.ROOT), ground[0], ground[1], ground[2]));
+            command(m, String.format(Locale.ROOT, "tp @a %.2f %.2f %.2f facing %.2f %.2f %.2f", ground[0] + 3.0, ground[1] + 4.0, ground[2] + 11.0, ground[0] - 0.5, ground[1] + 2.2, (double)ground[2]));
+            return true;
+         });
+         step("media_portrait_roar_" + kind, 4, m -> {
+            holdRoar(m, kind);
+            return stepTicks > 20;
+         });
+         shot("dragon_" + kind.name().toLowerCase(Locale.ROOT));
+      }
+      // ---- all six in a row
+      step("media_group", 60, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         DragonKind[] all = DragonKind.values();
+         for (int i = 0; i < all.length; i++) {
+            command(m, String.format(Locale.ROOT, "summon skywyrms:%s_wyrm %d %d %d {NoAI:1b,Silent:1b,Rotation:[%df,0f]}", all[i].name().toLowerCase(Locale.ROOT),
+               ground[0] - 15 + i * 6, ground[1], ground[2] + (i % 2) * 3, -35 + i * 14));
+         }
+         command(m, String.format(Locale.ROOT, "tp @a %.2f %.2f %.2f facing %.2f %.2f %.2f", ground[0] + 0.0, ground[1] + 5.0, ground[2] + 17.0, ground[0] + 0.0, ground[1] + 3.0, ground[2] + 1.0));
+         return true;
+      });
+      step("media_group_roar", 4, m -> {
+         holdRoar(m, null);
+         return stepTicks > 20;
+      });
+      shot("group");
+      step("media_end", 5, m -> {
+         check("media_done", true, "");
          return true;
       });
    }

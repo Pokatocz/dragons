@@ -15,6 +15,7 @@ Last stdout line: one JSON object (ok, exit_reason, elapsed, log, crash_report, 
 import argparse, json, os, re, shutil, signal, subprocess, sys, threading, time, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RES = os.environ.get("MC_RES", "1280x720")  # window and screenshot size
 RUN = os.path.join(ROOT, "run")
 MCROOT = os.path.join(RUN, "mcroot")
 TEMPLATES = os.path.join(RUN, "templates")
@@ -155,7 +156,7 @@ def free_display():
 
 def grab(display, out):
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "x11grab", "-video_size", "1280x720", "-i", f":{display}",
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "x11grab", "-video_size", RES, "-i", f":{display}",
                     "-frames:v", "1", out], capture_output=True)
 
 
@@ -193,7 +194,7 @@ def client(a):
             pass
     shutil.rmtree(os.path.join(inst, "crash-reports"), ignore_errors=True)
     disp = free_display()
-    xargs = os.environ.get("XVFB_ARGS", "-screen 0 1280x720x24 +extension GLX +render -noreset").split()
+    xargs = os.environ.get("XVFB_ARGS", f"-screen 0 {RES}x24 +extension GLX +render -noreset").split()
     xvfb = subprocess.Popen(["Xvfb", f":{disp}"] + xargs + ["-nolisten", "tcp"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)
@@ -201,7 +202,7 @@ def client(a):
                MESA_GLSL_VERSION_OVERRIDE="450", __GL_SYNC_TO_VBLANK="0", vblank_mode="0")
     jvm = ["-Xmx2200m", "-Djava.awt.headless=true"] + (a.jvm.split() if a.jvm else [])
     cmd = ["portablemc", "--main-dir", MCROOT, "start", spec, "--mc-dir", inst, "-u", "Tester", "--jvm", java_for(a.mc),
-           "--fetch-exclude-all", "--resolution", "1280x720", "--jvm-arg=" + ",".join(jvm)]
+           "--fetch-exclude-all", "--resolution", RES, "--jvm-arg=" + ",".join(jvm)]
     if a.join:
         host, _, port = a.join.partition(":")
         cmd += ["--join-server", host] + (["--join-server-port", port] if port else [])
