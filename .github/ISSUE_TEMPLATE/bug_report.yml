@@ -1,0 +1,54 @@
+name: Bug report
+description: Something does not work, crashes, or a dragon behaves wrongly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! The more of this you fill in, the faster it can be fixed.
+  - type: input
+    id: minecraft
+    attributes:
+      label: Minecraft version
+      placeholder: e.g. 1.21.1
+    validations:
+      required: true
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options: [Fabric, NeoForge, Forge]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Dragons version (file name)
+      placeholder: e.g. skywyrms-1.2.9-fabric-1.21.1.jar
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it happen?
+      options: [Single player, Multiplayer server, Both]
+    validations:
+      required: true
+  - type: input
+    id: pack
+    attributes:
+      label: Modpack or other mods
+      description: Name and version of the modpack, or the mods that might matter
+      placeholder: e.g. All the Mods 10 8.4
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: Which dragon, what you did, and the steps to make it happen again if you know them.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log or crash report
+      description: Upload logs/latest.log or the crash report (or paste a link to a paste site).
+      render: text
