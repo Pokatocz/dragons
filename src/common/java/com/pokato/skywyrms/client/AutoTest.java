@@ -54,6 +54,10 @@ public final class AutoTest {
       if (SCENARIO == null || finished) {
          return;
       }
+      if ("lanjoin".equals(SCENARIO)) {
+         joinTick(minecraft);
+         return;
+      }
       if (minecraft.player == null || minecraft.level == null || minecraft.getSingleplayerServer() == null) {
          joinedTicks = 0;
          return;
@@ -87,7 +91,7 @@ public final class AutoTest {
          done = true;
       }
       stepTicks++;
-      if (done || stepTicks > 600) {
+      if (done || stepTicks > (step.name.startsWith("long_") ? 8000 : 600)) {
          if (!done) {
             check("step_" + step.name, false, "timed out");
          }
@@ -115,6 +119,10 @@ public final class AutoTest {
       step("setup", 40, AutoTest::setup);
       if ("owner".equals(SCENARIO)) {
          ownerSteps();
+         return;
+      }
+      if ("lanhost".equals(SCENARIO)) {
+         lanHostSteps();
          return;
       }
       if ("breedstay".equals(SCENARIO)) {
@@ -704,7 +712,9 @@ public final class AutoTest {
    private static void mediaSteps() {
       int[] ground = new int[3]; // x, y, z of the meadow spot
       step("media_setup", 40, m -> {
+         //#if MC < 260300
          m.options.hideGui = true;
+         //#endif
          m.options.renderDistance().set(12);
          command(m, "gamemode spectator @a");
          command(m, "time set 6000");
@@ -1995,6 +2005,150 @@ public final class AutoTest {
       });
       check("mount_tame_saddle_ride", result[0] != null && result[0].contains("riding=true"), result[0]);
       return true;
+   }
+
+
+   // ---------------------------------------------------------------- LAN: a second player joins an opened world
+   private static final int LAN_PORT = Integer.getInteger("skywyrms.autotest.lanport", 25601);
+   private static int joinTicks;
+
+   /**
+    * Host side: wild, tamed, saddled, hostile and baby dragons plus an egg around the spawn, then "Open to LAN" (no
+    * authentication, the test clients are offline). The second client (scenario lanjoin) joins; once it is in, the host
+    * mounts its dragon, the joiner is put on another one and stands next to the hostile one for half a minute.
+    */
+   private static void lanHostSteps() {
+      step("lan_summon", 40, m -> {
+         int i = 0;
+         for (DragonKind kind : DragonKind.values()) {
+            command(m, String.format(Locale.ROOT, "summon skywyrms:%s %d -60 20", kind.id(), -15 + i * 6));
+            i++;
+         }
+         command(m, "summon skywyrms:dragon_egg 4 -60 4");
+         return true;
+      });
+      step("lan_prepare", 20, m -> {
+         onServer(m, () -> {
+            ServerPlayer host = serverPlayer(m);
+            for (DragonEntity d : dragons(m)) {
+               switch (d.getKind()) {
+                  case EMBER, STORM -> {
+                     d.tameTo(host.getUUID());
+                     d.setSaddled(true);
+                  }
+                  case THORN -> d.setHostile(true);
+                  case FROST -> {
+                     d.tameTo(host.getUUID());
+                     d.setAge(-24000);
+                  }
+                  default -> {
+                  }
+               }
+            }
+         });
+         return true;
+      });
+      step("lan_open", 20, m -> {
+         boolean[] opened = new boolean[1];
+         onServer(m, () -> m.getSingleplayerServer().setUsesAuthentication(false));
+         //#if MC >= 260300
+         opened[0] = m.getSingleplayerServer().publishServer(MinecraftServer.MultiplayerScope.LAN, true, LAN_PORT);
+         //#else
+         opened[0] = m.getSingleplayerServer().publishServer(net.minecraft.world.level.GameType.CREATIVE, true, LAN_PORT);
+         //#endif
+         check("lan_open", opened[0], "port " + LAN_PORT);
+         Skywyrms.LOGGER.info("[autotest] LAN OPEN {}", LAN_PORT);
+         return true;
+      });
+      step("long_wait_join", 40, m -> {
+         int[] n = new int[1];
+         onServer(m, () -> n[0] = m.getSingleplayerServer().getPlayerCount());
+         if (n[0] >= 2) {
+            check("lan_second_player_joined", true, "after " + stepTicks + " ticks");
+            return true;
+         }
+         if (stepTicks > 7800) {
+            check("lan_second_player_joined", false, "nobody joined");
+            return true;
+         }
+         return false;
+      });
+      step("lan_play", 200, m -> {
+         command(m, "ride Tester mount @e[type=skywyrms:ember_wyrm,limit=1,sort=nearest]");
+         command(m, "tp Tester2 -3 -60 20");
+         command(m, "ride Tester2 mount @e[type=skywyrms:storm_wyrm,limit=1,sort=nearest]");
+         return true;
+      });
+      shot("lan_host");
+      step("lan_hostile", 400, m -> {
+         command(m, "ride Tester2 dismount");
+         command(m, "gamemode survival Tester2");
+         command(m, "tp Tester2 3 -60 22");
+         return true;
+      });
+      step("lan_check", 1, m -> {
+         int[] n = new int[1];
+         String[] riding = new String[1];
+         onServer(m, () -> {
+            n[0] = m.getSingleplayerServer().getPlayerCount();
+            ServerPlayer host = serverPlayer(m);
+            riding[0] = String.valueOf(host.getVehicle() instanceof DragonEntity);
+         });
+         check("lan_both_still_online", n[0] >= 2, "players=" + n[0]);
+         check("lan_host_riding", "true".equals(riding[0]), "");
+         command(m, "gamemode creative Tester2");
+         return true;
+      });
+      step("long_hold", 1, m -> {
+         // keep the world open until the joining client has written its result (signal file)
+         String signal = System.getProperty("skywyrms.autotest.lansignal");
+         return signal == null || new File(signal).exists() || stepTicks > 2400;
+      });
+   }
+
+   /** Joining side: no integrated server; done once it has been in the world for 40 s, FAIL when it gets disconnected. */
+   private static void joinTick(Minecraft m) {
+      //#if MC >= 260200
+      net.minecraft.client.gui.screens.Screen screen = m.gui.screen();
+      //#else
+      net.minecraft.client.gui.screens.Screen screen = m.screen;
+      //#endif
+      if (screen instanceof net.minecraft.client.gui.screens.DisconnectedScreen) {
+         check("lan_join_connected", false, "disconnected after " + joinTicks + " ticks in the world: " + screen.getTitle().getString());
+         finish(m);
+         signalHost();
+         return;
+      }
+      if (m.player == null || m.level == null) {
+         return;
+      }
+      joinTicks++;
+      if (joinTicks == 200 || joinTicks == 600) {
+         Skywyrms.LOGGER.info("[autotest] SHOT lan_join_{}", joinTicks);
+      }
+      if (joinTicks >= 800) {
+         int dragons = 0;
+         for (Entity e : m.level.entitiesForRendering()) {
+            if (e instanceof DragonEntity) {
+               dragons++;
+            }
+         }
+         check("lan_join_connected", true, "40 s in the world, " + dragons + " dragons visible");
+         check("lan_join_sees_dragons", dragons >= 6, "dragons=" + dragons);
+         finish(m);
+         signalHost();
+      }
+   }
+
+   private static void signalHost() {
+      String signal = System.getProperty("skywyrms.autotest.lansignal");
+      if (signal != null) {
+         try {
+            Files.write(new File(signal).toPath(), "done".getBytes(StandardCharsets.UTF_8));
+         } catch (Exception e) {
+            Skywyrms.LOGGER.error("[autotest] cannot write signal", e);
+         }
+      }
    }
 
    // ---------------------------------------------------------------- helpers

@@ -201,7 +201,7 @@ def client(a):
     env = dict(os.environ, DISPLAY=f":{disp}", SDL_VIDEODRIVER="x11", SDL_VIDEO_FORCE_EGL="1", SDL_VIDEO_X11_FORCE_EGL="1", XDG_RUNTIME_DIR="/tmp/xdg-runtime", LIBGL_ALWAYS_SOFTWARE="1", MESA_GL_VERSION_OVERRIDE="4.5",
                MESA_GLSL_VERSION_OVERRIDE="450", __GL_SYNC_TO_VBLANK="0", vblank_mode="0")
     jvm = ["-Xmx2200m", "-Djava.awt.headless=true"] + (a.jvm.split() if a.jvm else [])
-    cmd = ["portablemc", "--main-dir", MCROOT, "start", spec, "--mc-dir", inst, "-u", "Tester", "--jvm", java_for(a.mc),
+    cmd = ["portablemc", "--main-dir", MCROOT, "start", spec, "--mc-dir", inst, "-u", os.environ.get("MC_USER", "Tester"), "--jvm", java_for(a.mc),
            "--fetch-exclude-all", "--resolution", RES, "--jvm-arg=" + ",".join(jvm)]
     if a.join:
         host, _, port = a.join.partition(":")
