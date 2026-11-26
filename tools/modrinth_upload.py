@@ -22,6 +22,7 @@ def main():
     ver = sys.argv[1]
     dry = "--dry" in sys.argv
     only = set(sys.argv[sys.argv.index("--only") + 1].split(",")) if "--only" in sys.argv else None
+    env = sys.argv[sys.argv.index("--env") + 1] if "--env" in sys.argv else None
     token = None if dry else open(os.environ["MODRINTH_TOKEN_FILE"]).read().strip()
     known = {v["version"] for v in json.load(urllib.request.urlopen(
         urllib.request.Request(API + "/tag/game_version", headers={"User-Agent": UA}), timeout=60))}
@@ -47,6 +48,7 @@ def main():
             "version_type": "release",
             "loaders": [loader],
             "featured": False,
+            **({"environment": env} if env else {}),
             "status": "listed",
             "file_parts": ["file"],
             "primary_file": "file",
