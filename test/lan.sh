@@ -9,8 +9,8 @@ SIG=/tmp/lan_signal_${L}_$MC; rm -f $SIG
 rm -rf $R/run/instances/$H $R/run/instances/$J
 python3 $R/run/launch.py client --loader $L --mc $MC --mods $JAR --instance $H --fresh --world flat "--jvm=-Dskywyrms.autotest=lanhost -Dskywyrms.autotest.lansignal=$SIG$EXTRA" --wait-file autotest_done.txt --timeout 900 > /tmp/lan_host_${L}_$MC.json 2>/dev/null &
 HP=$!
-for i in $(seq 1 300); do grep -q "LAN OPEN" $R/run/instances/$H/client.log 2>/dev/null && break; sleep 2; done
-grep -q "LAN OPEN" $R/run/instances/$H/client.log || { echo "HOST DID NOT OPEN LAN"; }
+for i in $(seq 1 300); do cat $R/run/instances/$H/client.log $R/run/instances/$H/logs/latest.log 2>/dev/null | grep -q "LAN OPEN" && break; sleep 2; done
+cat $R/run/instances/$H/client.log $R/run/instances/$H/logs/latest.log 2>/dev/null | grep -q "LAN OPEN" || { echo "HOST DID NOT OPEN LAN"; }
 JMODS=$JAR; [ "$NOMOD" = "nomod" ] && JMODS=""
 MC_USER=Tester2 python3 $R/run/launch.py client --loader $L --mc $MC --mods "$JMODS" --instance $J --fresh --world none --join localhost:25601 "--jvm=-Dskywyrms.autotest=lanjoin -Dskywyrms.autotest.lansignal=$SIG" --wait-file autotest_done.txt --timeout 600 > /tmp/lan_join_${L}_$MC.json 2>/dev/null
 wait $HP
