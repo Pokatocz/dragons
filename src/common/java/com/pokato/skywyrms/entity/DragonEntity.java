@@ -154,6 +154,8 @@ public class DragonEntity extends TamableAnimal {
    private int airTicks;
    private int flyTicks;
    private boolean hostile; // 1.2.9: some natural spawns attack players (config hostileChance)
+   private boolean wandering; // 1.3.0: third sneak-click mode, roams around wanderHome instead of following
+   private BlockPos wanderHome = BlockPos.ZERO;
    private final java.util.List<double[]> venomPools = new java.util.ArrayList<>();
    private int takeoffTimer;
    private double takeoffImpulse;
@@ -589,6 +591,12 @@ public class DragonEntity extends TamableAnimal {
       if (this.isHostile()) {
          output.putBoolean("Hostile", true);
       }
+      if (this.wandering) {
+         output.putBoolean("Wandering", true);
+         output.putInt("WanderX", this.wanderHome.getX());
+         output.putInt("WanderY", this.wanderHome.getY());
+         output.putInt("WanderZ", this.wanderHome.getZ());
+      }
       this.genes().save(output);
    //#else
    public void addAdditionalSaveData(CompoundTag tag) {
@@ -597,6 +605,12 @@ public class DragonEntity extends TamableAnimal {
       tag.putFloat("Energy", this.energy);
       if (this.isHostile()) {
          tag.putBoolean("Hostile", true);
+      }
+      if (this.wandering) {
+         tag.putBoolean("Wandering", true);
+         tag.putInt("WanderX", this.wanderHome.getX());
+         tag.putInt("WanderY", this.wanderHome.getY());
+         tag.putInt("WanderZ", this.wanderHome.getZ());
       }
       tag.put("Genes", this.genes().toTag());
    //#endif
@@ -614,12 +628,16 @@ public class DragonEntity extends TamableAnimal {
       super.readAdditionalSaveData(input);
       this.setSaddled(input.getBooleanOr("Saddled", false));
       this.hostile = input.getBooleanOr("Hostile", false);
+      this.wandering = input.getBooleanOr("Wandering", false);
+      this.wanderHome = new BlockPos(input.getIntOr("WanderX", 0), input.getIntOr("WanderY", 0), input.getIntOr("WanderZ", 0));
       this.energy = Mth.clamp(input.getFloatOr("Energy", 100.0F), 0.0F, 100.0F);
    //#else
    public void readAdditionalSaveData(CompoundTag tag) {
       super.readAdditionalSaveData(tag);
       this.setSaddled(Nbt.getBoolean(tag, "Saddled", false));
       this.hostile = Nbt.getBoolean(tag, "Hostile", false);
+      this.wandering = Nbt.getBoolean(tag, "Wandering", false);
+      this.wanderHome = new BlockPos(Nbt.getInt(tag, "WanderX", 0), Nbt.getInt(tag, "WanderY", 0), Nbt.getInt(tag, "WanderZ", 0));
       this.energy = Mth.clamp(Nbt.getFloat(tag, "Energy", 100.0F), 0.0F, 100.0F);
    //#endif
       this.entityData.set(DATA_ENERGY, Math.round(this.energy));
@@ -650,7 +668,7 @@ public class DragonEntity extends TamableAnimal {
       this.goalSelector.addGoal(3, new MeleeAttackGoal(this, 1.25, true));
       this.goalSelector.addGoal(4, new DragonFollowGoal(this));
       this.goalSelector.addGoal(5, new WanderFlightGoal(this));
-      this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.8));
+      this.goalSelector.addGoal(6, new com.pokato.skywyrms.entity.ai.DragonStrollGoal(this, 0.8));
       this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12.0F));
       this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
       this.targetSelector.addGoal(1, new OwnerHurtByTargetGoal(this));
@@ -1497,14 +1515,23 @@ public class DragonEntity extends TamableAnimal {
          return InteractionResult.SUCCESS;
       } else if (player.isSecondaryUseActive()) {
          if (!client) {
-            this.setOrderedToSit(!this.isOrderedToSit());
+            // 1.3.0: follow -> stay -> roam -> follow
+            String key;
+            if (this.isOrderedToSit()) {
+               this.setOrderedToSit(false);
+               this.setWandering(true);
+               key = "message.skywyrms.wandering";
+            } else if (this.wandering) {
+               this.setWandering(false);
+               key = "message.skywyrms.following";
+            } else {
+               this.setOrderedToSit(true);
+               key = "message.skywyrms.staying";
+            }
             this.jumping = false;
             this.getNavigation().stop();
             this.setTarget(null);
-            message(
-               player,
-               Component.translatable(this.isOrderedToSit() ? "message.skywyrms.staying" : "message.skywyrms.following", new Object[]{this.getDisplayName()})
-            );
+            message(player, Component.translatable(key, new Object[]{this.getDisplayName()}));
          }
 
          return InteractionResult.SUCCESS;
@@ -1521,6 +1548,7 @@ public class DragonEntity extends TamableAnimal {
             } else {
                this.setOrderedToSit(false);
                this.setInSittingPose(false);
+               this.setWandering(false);
                player.startRiding(this);
             }
          }
@@ -1542,6 +1570,23 @@ public class DragonEntity extends TamableAnimal {
 
    public void setHostile(boolean hostile) {
       this.hostile = hostile;
+   }
+
+   /** 1.3.0: a tamed dragon told to roam walks and flies around {@link #wanderHome()} (config wanderRadius) instead of following. */
+   public boolean isWandering() {
+      return this.wandering && this.isTame() && !this.isOrderedToSit();
+   }
+
+   public BlockPos wanderHome() {
+      return this.wanderHome;
+   }
+
+   /** Roaming starts around the spot where the dragon is now. */
+   public void setWandering(boolean wandering) {
+      this.wandering = wandering;
+      if (wandering) {
+         this.wanderHome = this.blockPosition();
+      }
    }
 
    /** 1.2.9, config allowRiding: no player can get on (the /ride command still can, it forces it). */

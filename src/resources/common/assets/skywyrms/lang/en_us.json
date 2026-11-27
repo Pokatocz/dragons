@@ -30,6 +30,7 @@
   "info.skywyrms.hostile": "Hostile: attacks players who come close",
   "message.skywyrms.staying": "%s will stay here",
   "message.skywyrms.following": "%s will follow you",
+  "message.skywyrms.wandering": "%s will roam around here",
   "element.skywyrms.ember": "Ember",
   "element.skywyrms.ember.adjective": "Blazing",
   "infusion.skywyrms.ember": "flames (sets on fire)",

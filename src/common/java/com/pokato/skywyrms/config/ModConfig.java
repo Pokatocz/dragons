@@ -59,6 +59,8 @@ public final class ModConfig {
    public float hostileChance = 0.33F;
    public boolean hostileTamable = true;
    public boolean wildDespawn = false;
+   // 1.3.0
+   public int wanderRadius = 20;
    private static ModConfig instance;
 
    public static final String[] ABILITY_IDS = {"fire_breath", "frost_breath", "lightning", "venom_spit", "void_blink", "tidal_jet"};
@@ -193,6 +195,7 @@ public final class ModConfig {
       c.hostileChance = number(json, "hostileChance", 0.33F, 0.0F, 1.0F);
       c.hostileTamable = bool(json, "hostileTamable", true);
       c.wildDespawn = bool(json, "wildDespawn", false);
+      c.wanderRadius = Math.round(number(json, "wanderRadius", c.wanderRadius, 6, 64));
       return c;
    }
 
@@ -231,6 +234,7 @@ public final class ModConfig {
       out.addProperty("hostileChance", this.hostileChance);
       out.addProperty("hostileTamable", this.hostileTamable);
       out.addProperty("wildDespawn", this.wildDespawn);
+      out.addProperty("wanderRadius", this.wanderRadius);
       JsonObject h = new JsonObject();
       help(h, "items", "Item lists take item ids (\"minecraft:diamond\" or just \"diamond\") and tags (\"#minecraft:meat\"). An empty list [] keeps the default.");
       help(h, "tameItems", "Items that tame a wild adult dragon, e.g. [\"diamond\", \"emerald\", \"gold_ingot\"]. Default: meat (Tide Wyrm also fish).");
@@ -246,6 +250,7 @@ public final class ModConfig {
       help(h, "hostileChance", "0 to 1, default 0.33: the chance that a naturally spawned wild dragon is hostile. A hostile dragon attacks players who come within about 24 blocks (not in creative, spectator or peaceful) and shows angry particles. Summoned dragons are never hostile.");
       help(h, "hostileTamable", "true (default): a hostile dragon can be tamed with its taming item like any wild dragon and then stops being hostile. false: hostile dragons can't be tamed.");
       help(h, "wildDespawn", "false (default): wild dragons never despawn. true: wild dragons despawn like other mobs when no player is near (at once beyond 128 blocks, now and then beyond 32). Tamed, named, leashed dragons and hatchlings never despawn.");
+      help(h, "wanderRadius", "6-64, default 20: how far a tamed dragon told to roam walks and flies from the spot where you left it. Sneak + right-click a tamed dragon switches follow -> stay -> roam.");
       help(h, "sneakFliesDown", "false (default): the sneak key (Left Shift) dismounts, also in the air. true: in the air the sneak key flies down and you only dismount on the ground or in water. In multiplayer set it on the server and in your own game.");
       help(h, "restart", "Changes take effect after restarting the game / server.");
       out.add("_help", h);

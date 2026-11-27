@@ -15,6 +15,7 @@ A Minecraft mod: tame, saddle, ride and breed six elemental dragons – fire, fr
 - Breeding with golden apples, dragon eggs that incubate, hatchlings that grow up
 - Genetics: two elements per dragon, 30 hybrids, inherited stats
 - Wild dragons in fitting biomes – some of them hostile
+- Tamed dragons follow you, stay, or roam around a spot (sneak + right-click switches)
 - A large config (`config/skywyrms.json`): taming and food items, stat multipliers, ability switches, riding and saddles on/off, hostile dragons, despawning and more
 
 ## Building

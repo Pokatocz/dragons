@@ -1,6 +1,7 @@
 //#autotest-only
 package com.pokato.skywyrms.client;
 
+import net.minecraft.world.phys.Vec3;
 import com.pokato.skywyrms.Skywyrms;
 import com.pokato.skywyrms.config.ModConfig;
 import com.pokato.skywyrms.entity.DragonEggEntity;
@@ -12,6 +13,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
@@ -123,6 +125,10 @@ public final class AutoTest {
       }
       if ("lanhost".equals(SCENARIO)) {
          lanHostSteps();
+         return;
+      }
+      if ("wander".equals(SCENARIO)) {
+         wanderSteps();
          return;
       }
       if ("breedstay".equals(SCENARIO)) {
@@ -2007,6 +2013,114 @@ public final class AutoTest {
       return true;
    }
 
+
+
+   // ---------------------------------------------------------------- 1.3.0: roam mode (follow -> stay -> roam)
+   private static final double[] wanderStats = new double[4]; // max distance from home, min distance to player, flew (0/1), ticks
+
+   private static void sneakClick(ServerPlayer player, DragonEntity d) {
+      InteractionHand hand = InteractionHand.MAIN_HAND;
+      player.setItemInHand(hand, ItemStack.EMPTY);
+      player.setShiftKeyDown(true);
+      d.mobInteract(player, hand);
+      player.setShiftKeyDown(false);
+   }
+
+   private static String modeOf(DragonEntity d) {
+      return d.isOrderedToSit() ? "S" : d.isWandering() ? "W" : "F";
+   }
+
+   private static void wanderSteps() {
+      step("wander_setup", 60, m -> {
+         command(m, "kill @e[type=!minecraft:player]");
+         command(m, "tp @a 0 -60 0 0 10");
+         command(m, "summon skywyrms:storm_wyrm 0 -60 8");
+         return true;
+      });
+      step("wander_modes", 20, m -> {
+         String[] r = new String[1];
+         onServer(m, () -> {
+            ServerPlayer player = serverPlayer(m);
+            DragonEntity d = dragons(m).get(0);
+            d.tameTo(player.getUUID());
+            StringBuilder seq = new StringBuilder(modeOf(d));
+            for (int i = 0; i < 5; i++) {
+               sneakClick(player, d);
+               seq.append(modeOf(d));
+            }
+            r[0] = seq + " home=" + d.wanderHome().toShortString();
+         });
+         // F -> S -> W -> F -> S -> W
+         check("wander_click_cycle", r[0].startsWith("FSWFSW"), r[0]);
+         return true;
+      });
+      step("wander_leave", 20, m -> {
+         command(m, "tp @a 0 -60 -40");
+         Arrays.fill(wanderStats, 0.0);
+         wanderStats[1] = 1.0E9;
+         onServer(m, () -> dragons(m).get(0).flightRequested = true);
+         return true;
+      });
+      step("long_wander_observe", 1, m -> {
+         onServer(m, () -> {
+            DragonEntity d = dragons(m).get(0);
+            ServerPlayer player = serverPlayer(m);
+            Vec3 home = Vec3.atBottomCenterOf(d.wanderHome());
+            double fromHome = Math.sqrt(Math.pow(d.getX() - home.x, 2) + Math.pow(d.getZ() - home.z, 2));
+            wanderStats[0] = Math.max(wanderStats[0], fromHome);
+            wanderStats[1] = Math.min(wanderStats[1], d.distanceTo(player));
+            if (d.isFlying() || d.isAiFlying()) {
+               wanderStats[2] = 1.0;
+            }
+            if (stepTicks % 300 == 1) {
+               Skywyrms.LOGGER.info("[autotest] DIAG wander t={} pos={} fromHome={} flying={} mode={}", stepTicks,
+                     String.format(Locale.ROOT, "%.1f,%.1f,%.1f", d.getX(), d.getY(), d.getZ()), String.format(Locale.ROOT, "%.1f", fromHome),
+                     d.isFlying(), modeOf(d));
+            }
+         });
+         if (stepTicks == 400) {
+            Skywyrms.LOGGER.info("[autotest] SHOT wander_flight");
+         }
+         if (stepTicks < 1800) {
+            return false;
+         }
+         int radius = ModConfig.get().wanderRadius;
+         check("wander_stays_near_home", wanderStats[0] <= radius + 8, String.format(Locale.ROOT, "max %.1f blocks from home (radius %d)", wanderStats[0], radius));
+         check("wander_does_not_follow", wanderStats[1] > 20.0, String.format(Locale.ROOT, "closest to the player %.1f blocks", wanderStats[1]));
+         check("wander_flew", wanderStats[2] > 0.0, "");
+         return true;
+      });
+      step("wander_persist", 20, m -> {
+         // /data merge saves the dragon and loads it back: roam mode and its spot must survive that
+         String[] before = new String[1];
+         onServer(m, () -> before[0] = modeOf(dragons(m).get(0)) + dragons(m).get(0).wanderHome().toShortString());
+         command(m, "data merge entity @e[type=skywyrms:storm_wyrm,limit=1] {PersistenceRequired:1b}");
+         String[] after = new String[1];
+         onServer(m, () -> after[0] = modeOf(dragons(m).get(0)) + dragons(m).get(0).wanderHome().toShortString());
+         check("wander_saved_and_loaded", before[0].equals(after[0]) && before[0].startsWith("W"), before[0] + " -> " + after[0]);
+         return true;
+      });
+      step("wander_back_to_follow", 20, m -> {
+         String[] r = new String[1];
+         onServer(m, () -> {
+            DragonEntity d = dragons(m).get(0);
+            sneakClick(serverPlayer(m), d);
+            r[0] = modeOf(d);
+         });
+         check("wander_click_to_follow", "F".equals(r[0]), r[0]);
+         command(m, "tp @a 0 -60 -30");
+         return true;
+      });
+      step("wander_follows_again", 1, m -> {
+         double[] dist = new double[1];
+         onServer(m, () -> dist[0] = dragons(m).get(0).distanceTo(serverPlayer(m)));
+         if (dist[0] < 16.0 || stepTicks > 580) {
+            check("wander_follows_again", dist[0] < 16.0, String.format(Locale.ROOT, "%.1f blocks after %d ticks", dist[0], stepTicks));
+            return true;
+         }
+         return false;
+      });
+   }
 
    // ---------------------------------------------------------------- LAN: a second player joins an opened world
    private static final int LAN_PORT = Integer.getInteger("skywyrms.autotest.lanport", 25601);

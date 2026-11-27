@@ -1,5 +1,6 @@
 package com.pokato.skywyrms.entity.ai;
 
+import com.pokato.skywyrms.config.ModConfig;
 import com.pokato.skywyrms.entity.DragonEntity;
 import java.util.EnumSet;
 import net.minecraft.core.BlockPos;
@@ -27,19 +28,21 @@ public class WanderFlightGoal extends Goal {
 
    public boolean canUse() {
       DragonEntity d = this.dragon;
-      if (d.isTame() || d.isVehicle() || d.isPassenger() || d.isLeashed() || d.getTarget() != null || !d.onGround() || d.isInWater()) {
+      // wild dragons, and since 1.3.0 tamed grown-ups told to roam (they take off a bit more often)
+      boolean roaming = d.isWandering() && !d.isBaby();
+      if (d.isTame() && !roaming || d.isVehicle() || d.isPassenger() || d.isLeashed() || d.getTarget() != null || !d.onGround() || d.isInWater()) {
          return false;
       } else if (d.flightRequested) {
          d.flightRequested = false;
          return true;
       } else {
-         return d.getRandom().nextInt(reducedTickDelay(800)) != 0 ? false : d.level().canSeeSky(d.blockPosition().above(3));
+         return d.getRandom().nextInt(reducedTickDelay(roaming ? 500 : 800)) != 0 ? false : d.level().canSeeSky(d.blockPosition().above(3));
       }
    }
 
    public boolean canContinueToUse() {
       DragonEntity d = this.dragon;
-      return d.isAiFlying() && d.isAlive() && !d.isVehicle() && !d.isTame() && d.getTarget() == null;
+      return d.isAiFlying() && d.isAlive() && !d.isVehicle() && (!d.isTame() || d.isWandering()) && d.getTarget() == null;
    }
 
    public boolean requiresUpdateEveryTick() {
@@ -48,7 +51,7 @@ public class WanderFlightGoal extends Goal {
 
    public void start() {
       DragonEntity d = this.dragon;
-      this.home = d.position();
+      this.home = d.isWandering() ? Vec3.atBottomCenterOf(d.wanderHome()) : d.position();
       this.legs = 2 + d.getRandom().nextInt(4);
       this.ticks = 0;
       this.landing = false;
@@ -126,7 +129,7 @@ public class WanderFlightGoal extends Goal {
 
       for (int attempt = 0; attempt < 8; attempt++) {
          double angle = random.nextDouble() * Math.PI * 2.0;
-         double radius = 14.0 + random.nextDouble() * 22.0;
+         double radius = d.isWandering() ? 4.0 + random.nextDouble() * Math.max(2.0, ModConfig.get().wanderRadius - 4.0) : 14.0 + random.nextDouble() * 22.0;
          int x = Mth.floor(this.home.x + Math.cos(angle) * radius);
          int z = Mth.floor(this.home.z + Math.sin(angle) * radius);
          if (level.hasChunkAt(new BlockPos(x, 0, z))) {
@@ -154,10 +157,11 @@ public class WanderFlightGoal extends Goal {
       this.landing = true;
       this.legTicks = 0;
       Vec3 spot = this.home;
+      double spread = d.isWandering() ? Math.min(24.0, ModConfig.get().wanderRadius) : 24.0;
 
       for (int attempt = 0; attempt < 10; attempt++) {
-         int x = Mth.floor(this.home.x + (random.nextDouble() - 0.5) * 24.0);
-         int z = Mth.floor(this.home.z + (random.nextDouble() - 0.5) * 24.0);
+         int x = Mth.floor(this.home.x + (random.nextDouble() - 0.5) * spread);
+         int z = Mth.floor(this.home.z + (random.nextDouble() - 0.5) * spread);
          if (level.hasChunkAt(new BlockPos(x, 0, z))) {
             int ground = this.groundAt(x, z);
             //#if MC >= 12102

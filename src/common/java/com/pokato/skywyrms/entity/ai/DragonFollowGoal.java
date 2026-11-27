@@ -58,7 +58,7 @@ public class DragonFollowGoal extends Goal {
 
    private LivingEntity ownerIfFollowable() {
       DragonEntity d = this.dragon;
-      if (d.isTame() && !d.unableToMoveToOwner() && !d.isVehicle() && d.isAlive()) {
+      if (d.isTame() && !d.unableToMoveToOwner() && !d.isWandering() && !d.isVehicle() && d.isAlive()) {
          LivingEntity owner = d.getOwner();
          return owner != null && owner.isAlive() && !owner.isSpectator() && owner.level() == d.level() ? owner : null;
       } else {
